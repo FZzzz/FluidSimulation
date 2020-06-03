@@ -1,0 +1,301 @@
+#include "Simulation.h"
+#include "imgui/imgui.h"
+#include "CollisionDetection.h"
+#include "SPHKernel.h"
+#include <iostream>
+#include "imgui/imgui.h"
+
+Simulation::Simulation()
+	: m_solver(nullptr), m_particle_system(nullptr), m_neighbor_searcher(nullptr), 
+	m_initialized(false), m_world_desc(SimWorldDesc(-9.8f, 0.f)), m_pause(false),
+	m_rest_density(0.f)
+{
+	
+
+}
+Simulation::Simulation(SimWorldDesc desc)
+	: m_solver(nullptr), m_particle_system(nullptr), m_neighbor_searcher(nullptr), 
+	m_initialized(false), m_world_desc(desc), m_pause(false)
+{
+}
+
+Simulation::~Simulation()
+{
+}
+
+void Simulation::Initialize(PBD_MODE mode, std::shared_ptr<ParticleSystem> particle_system)
+{
+	m_solver = std::make_shared<ConstraintSolver>(mode);
+	m_particle_system = particle_system;
+	m_neighbor_searcher = std::make_shared<NeighborSearch>(m_particle_system);
+	m_neighbor_searcher->Initialize();
+	m_initialized = true;
+}
+
+/*
+ * Step simulation
+ * @param[in] dt time step
+ * @retval true  Successfully project constraints
+ * @retval false Failed on constraint projection
+ */
+bool Simulation::Step(float dt)
+{
+	if (!m_initialized)
+		return false;
+
+	if (m_pause)
+		return true;
+
+	const float effective_radius = 10.f;
+
+	PredictPositions(dt);
+
+	FindNeighborParticles(effective_radius);
+	ComputeDensity(effective_radius);
+	ComputeLambdas(effective_radius);
+	ComputeSPHParticlesCorrection(effective_radius);
+
+	CollisionDetection(dt);
+	HandleCollisionResponse();
+	GenerateCollisionConstraint();
+	
+ 	if (!ProjectConstraints(dt))
+		return false;
+
+	ApplySolverResults(dt);
+
+	return true;
+}
+
+void Simulation::AddCollider(Collider* collider)
+{
+	m_colliders.push_back(collider);
+	m_collision_table.push_back(std::vector<Collider*>());
+}
+
+void Simulation::AddStaticConstraint(Constraint* constraint)
+{
+	m_static_constraints.push_back(constraint);
+}
+
+void Simulation::AddStaticConstraints(std::vector<Constraint*> constraints)
+{
+	m_static_constraints.insert(m_static_constraints.end(), constraints.begin(), constraints.end());
+}
+
+void Simulation::SetSolverIteration(uint32_t iter_count)
+{
+	m_solver->setSolverIteration(iter_count);
+}
+
+void Simulation::Pause()
+{
+	m_pause = !m_pause;
+}
+
+void Simulation::setGravity(float gravity)
+{
+	m_world_desc.gravity = gravity;
+}
+
+void Simulation::PredictPositions(float dt)
+{
+	/*
+	 * Update position and velocity
+	 * 1. forall vertices i do v_i = v_i + dt * w_i * f_{ext}
+	 * 2. damp velocities 	
+	 */
+	for (auto p : m_particle_system->getParticles())
+	{
+		// external forces
+		p->m_force = p->m_mass * glm::vec3(0, m_world_desc.gravity, 0);
+
+		p->m_velocity = p->m_velocity + dt * p->m_massInv * p->m_force;
+		
+		// dampVelocity()
+
+		p->m_new_position = p->m_position + dt * p->m_velocity;
+
+		// Update colliders
+		p->UpdateCollider();
+	}
+}
+
+void Simulation::FindNeighborParticles(float effective_radius)
+{
+	m_neighbor_searcher->NaiveSearch(effective_radius);
+	//m_neighbor_searcher->FetchNeighbors(effective_radius);
+}
+
+void Simulation::ComputeDensity(float effective_radius)
+{
+	
+#ifdef _DEBUG
+	{
+		const auto& neighbors = m_neighbor_searcher->FetchNeighbors(0);
+		ImGui::Begin("Neighbor test");
+		ImGui::Text("Object Array Size: %u", neighbors.size());
+		ImGui::End();
+	}
+#endif
+	auto& particles = m_particle_system->getParticles();
+
+	for (int i = 0; i < particles.size(); ++i)
+	{
+		auto neighbors = m_neighbor_searcher->FetchNeighbors(static_cast<size_t>(i));
+		particles[i]->m_density = particles[i]->m_mass * SPHKernel::Poly6_W(0, effective_radius);
+
+		for (int j = 0; j < neighbors.size(); ++j)
+		{
+			float distance = glm::distance(particles[i]->m_new_position, particles[j]->m_new_position);
+			particles[i]->m_density += particles[j]->m_mass * SPHKernel::Poly6_W(distance, effective_radius);
+		}
+		particles[i]->m_C = std::fmax(particles[i]->m_density / m_rest_density - 1.f, 0.f);
+	}
+
+}
+
+void Simulation::ComputeLambdas(float effective_radius)
+{
+	const float epsilon = 1.0e-6;
+	/* Compute density constraints */
+	auto& particles = m_particle_system->getParticles();
+	for (int i = 0; i < particles.size(); ++i)
+	{
+		auto neighbors = m_neighbor_searcher->FetchNeighbors(static_cast<size_t>(i));
+		
+		// Reset Lagragian multiplier
+		particles[i]->m_lambda = -particles[i]->m_C;
+		glm::vec3 gradientC = glm::vec3(0, 0, 0);
+
+		for (int j = 0; j < neighbors.size(); ++j)
+		{
+			glm::vec3 diff = particles[i]->m_new_position - particles[j]->m_new_position;
+			float distance = glm::distance(particles[i]->m_new_position, particles[j]->m_new_position);
+			gradientC += (1.f / m_rest_density) * SPHKernel::Spiky_W_Gradient(diff, distance, effective_radius);			
+		}
+
+		particles[i]->m_lambda /= glm::dot(gradientC, gradientC) + epsilon;
+	}
+}
+
+void Simulation::ComputeSPHParticlesCorrection(float effective_radius)
+{
+	auto& particles = m_particle_system->getParticles();
+
+	for (int i = 0; i < particles.size(); ++i)
+	{
+		auto neighbors = m_neighbor_searcher->FetchNeighbors(static_cast<size_t>(i));
+
+		for (int j = 0; j < neighbors.size(); ++j)
+		{
+			float distance = glm::distance(particles[i]->m_new_position, particles[j]->m_new_position);
+
+			particles[i]->m_new_position += 
+				(1.f/m_rest_density) * 
+				(particles[i]->m_lambda + particles[j]->m_lambda) * 
+				SPHKernel::Poly6_W(distance, effective_radius);
+		}
+	}
+
+}
+
+void Simulation::CollisionDetection(float dt)
+{	
+	auto& particles = m_particle_system->getParticles();
+	// Clean previous CD result
+	for (auto vec : m_collision_table)
+	{
+		vec.clear();
+	}
+
+	for (size_t i = 0; i < particles.size(); ++i)
+	{
+		const glm::vec3& point_pos = particles[i]->m_new_position;
+
+		for (size_t j = 0; j < m_colliders.size(); ++j)
+		{
+			/* If collided with other, then apply collision handling directly */
+			if (particles[i]->TestCollision(m_colliders[j]))
+				particles[i]->OnCollision(m_colliders[j], dt);
+		}
+	}
+
+	// TODO: Change to m_rigidbodies[i], m_rigidbodies[j]
+	for (size_t i = 0; i < m_colliders.size(); ++i)
+	{
+		for (size_t j = i+1; j < m_colliders.size(); ++j)
+		{
+			/* Record result if there's contact between two objects */
+			if (m_colliders[i]->TestCollision(m_colliders[j]))
+				m_collision_table[i].push_back(m_colliders[j]);
+		}
+	}
+}
+
+/*
+ * This function handles collision response for specific collision pairs.
+ * (Particle v.s. Static plane),  (Particle v.s. Static AABB), (Particle v.s Static OBB)
+ */
+void Simulation::HandleCollisionResponse()
+{
+}
+
+/*
+ * In jelly simulation the only collision is particle hitting the plane or other static BBs.
+ * 
+*/
+void Simulation::GenerateCollisionConstraint()
+{
+	/* 
+	for(pairs : collision_pairs)
+	{
+		// Generate collision constraint
+	}
+	*/
+}
+
+bool Simulation::ProjectConstraints(const float &dt)
+{
+	m_solver->SolveConstraints(dt, m_static_constraints, m_collision_constraints);
+
+	return true;
+}
+
+void Simulation::AddCollisionConstraint(Constraint* constraint)
+{
+	m_collision_constraints.push_back(constraint);
+}
+
+void Simulation::ApplySolverResults(float dt)
+{
+	for(auto p : m_particle_system->getParticles())
+	{
+		p->Update(dt);
+	}
+	m_particle_system->Update();
+/*
+#if _DEBUG	
+	std::cout << particles[0]->position.x << " "
+		<< particles[1]->position.x << std::endl;
+#endif
+*/
+/*
+#ifdef _DEBUG
+	{
+		ImGui::Begin("Particles");
+		float p0[3] = { particles[0]->position.x,
+						particles[0]->position.y,
+						particles[0]->position.z };
+		ImGui::InputFloat3("P0 position", p0, 5, ImGuiInputTextFlags_ReadOnly);
+
+		float p1[3] = { particles[1]->position.x,
+						particles[1]->position.y,
+						particles[1]->position.z };
+		ImGui::InputFloat3("P1 position", p1, 5, ImGuiInputTextFlags_ReadOnly);
+		ImGui::End();
+	}
+#endif
+*/
+
+}
