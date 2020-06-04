@@ -171,9 +171,19 @@ bool GLFWApp::Initialize(int width , int height , const std::string &title)
 		plane_terrain->Initialize(glm::vec3(0, 0, 0), shadow_mapping_shader);
 		m_resource_manager->AddGameObject(static_pointer_cast<GameObject>(plane_terrain));
 		m_simulator->AddCollider(plane_terrain->getCollider());
+
+		auto collider = new PlaneCollider(glm::vec3(1, 0, 0), -10);
+		m_simulator->AddCollider(collider);
+		collider = new PlaneCollider(glm::vec3(-1, 0, 0), -10);
+		m_simulator->AddCollider(collider);
+		collider = new PlaneCollider(glm::vec3(0, 0, 1), -15 );
+		m_simulator->AddCollider(collider);
+		collider = new PlaneCollider(glm::vec3(0, 0, -1), 1);
+		m_simulator->AddCollider(collider);
 	}
 
 	GenerateRadomParticles();
+	GenerateFluidParticles();
 	/*
 	 *	End of resource settings
 	 */
@@ -190,7 +200,7 @@ bool GLFWApp::Initialize(int width , int height , const std::string &title)
 	/* Managers initialization */
 	m_resource_manager->ArrangeStaticObjects();
 	m_simulator->Initialize(PBD_MODE::XPBD, m_particle_system);
-	m_simulator->SetSolverIteration(1);
+	m_simulator->SetSolverIteration(5);
 
 	return true;
 }
@@ -333,6 +343,10 @@ void GLFWApp::Update()
 
 	// GUI update
 	m_gui_manager->Update();
+	/*
+	if(!m_simulator->isPause())
+		m_simulator->Pause();
+		*/
 }
 
 void GLFWApp::SetUpImGui()
@@ -351,11 +365,35 @@ void GLFWApp::GenerateRadomParticles()
 
 	for (int i = 0; i < 1000; ++i)
 	{
-		x = static_cast<float>(rand() % 1000) / 20.f - 25.f;
+		x = static_cast<float>(rand() % 1000) / 50.f - 10.f;
 		y = static_cast<float>(rand() % 1000) / 100.f;
 		z = static_cast<float>(rand() % 1000) / -20.f;
 		auto particle = std::make_shared<Particle>(glm::vec3(x, y, z), 0.1f);
 		particles.push_back(particle);
+	}
+
+	m_particle_system->setParticles(particles);
+	m_particle_system->Update();
+}
+
+void GLFWApp::GenerateFluidParticles()
+{
+	float x, y, z;
+	std::vector<Particle_Ptr> particles;
+
+	for (int i = 0; i < 10; ++i)
+	{
+		for (int j = 0; j < 10; ++j)
+		{
+			for (int k = 0; k < 10; ++k)
+			{
+				x = -9.9f + 0.6f * static_cast<float>(i);
+				y = 12.5f + 0.6f * static_cast<float>(j);
+				z = -14.9f + 0.6f * static_cast<float>(k);
+				auto particle = std::make_shared<Particle>(glm::vec3(x, y, z), 0.1f);
+				particles.push_back(particle);
+			}
+		}
 	}
 
 	m_particle_system->setParticles(particles);

@@ -4,11 +4,12 @@
 #include "SPHKernel.h"
 #include <iostream>
 #include "imgui/imgui.h"
+#include <omp.h>
 
 Simulation::Simulation()
 	: m_solver(nullptr), m_particle_system(nullptr), m_neighbor_searcher(nullptr), 
-	m_initialized(false), m_world_desc(SimWorldDesc(-9.8f, 0.f)), m_pause(false),
-	m_rest_density(0.f)
+	m_initialized(false), m_world_desc(SimWorldDesc(-9.8f, 0.f)), m_pause(true),
+	m_rest_density(1.2f)
 {
 	
 
@@ -46,18 +47,22 @@ bool Simulation::Step(float dt)
 	if (m_pause)
 		return true;
 
-	const float effective_radius = 10.f;
+	const float effective_radius = 1.f;
 
 	PredictPositions(dt);
-
-	FindNeighborParticles(effective_radius);
-	ComputeDensity(effective_radius);
-	ComputeLambdas(effective_radius);
-	ComputeSPHParticlesCorrection(effective_radius);
 
 	CollisionDetection(dt);
 	HandleCollisionResponse();
 	GenerateCollisionConstraint();
+
+	for (uint32_t i = 0; i < m_solver->getSolverIteration(); ++i)
+	{
+		FindNeighborParticles(effective_radius);
+		ComputeDensity(effective_radius);
+		ComputeLambdas(effective_radius);
+		ComputeSPHParticlesCorrection(effective_radius);
+
+	}
 	
  	if (!ProjectConstraints(dt))
 		return false;
@@ -124,58 +129,75 @@ void Simulation::PredictPositions(float dt)
 void Simulation::FindNeighborParticles(float effective_radius)
 {
 	m_neighbor_searcher->NaiveSearch(effective_radius);
-	//m_neighbor_searcher->FetchNeighbors(effective_radius);
 }
 
 void Simulation::ComputeDensity(float effective_radius)
 {
-	
-#ifdef _DEBUG
+	/*
 	{
 		const auto& neighbors = m_neighbor_searcher->FetchNeighbors(0);
 		ImGui::Begin("Neighbor test");
 		ImGui::Text("Object Array Size: %u", neighbors.size());
 		ImGui::End();
 	}
-#endif
+	*/
+
 	auto& particles = m_particle_system->getParticles();
 
-	for (int i = 0; i < particles.size(); ++i)
+	#pragma omp parallel default(shared)
 	{
-		auto neighbors = m_neighbor_searcher->FetchNeighbors(static_cast<size_t>(i));
-		particles[i]->m_density = particles[i]->m_mass * SPHKernel::Poly6_W(0, effective_radius);
-
-		for (int j = 0; j < neighbors.size(); ++j)
+		#pragma omp for schedule(static)
+		for (int i = 0; i < particles.size(); ++i)
 		{
-			float distance = glm::distance(particles[i]->m_new_position, particles[j]->m_new_position);
-			particles[i]->m_density += particles[j]->m_mass * SPHKernel::Poly6_W(distance, effective_radius);
+			auto neighbors = m_neighbor_searcher->FetchNeighbors(static_cast<size_t>(i));
+			particles[i]->m_density = particles[i]->m_mass * SPHKernel::Poly6_W(0, effective_radius);
+
+
+			for (int j = 0; j < neighbors.size(); ++j)
+			{
+				float distance = glm::distance(particles[i]->m_new_position, particles[neighbors[j]]->m_new_position);
+				particles[i]->m_density += particles[neighbors[j]]->m_mass * SPHKernel::Poly6_W(distance, effective_radius);
+			}
+			particles[i]->m_C = particles[i]->m_density / m_rest_density - 1.f;
 		}
-		particles[i]->m_C = std::fmax(particles[i]->m_density / m_rest_density - 1.f, 0.f);
 	}
 
 }
 
 void Simulation::ComputeLambdas(float effective_radius)
 {
-	const float epsilon = 1.0e-6;
+	const float epsilon = 1.0e-6f;
 	/* Compute density constraints */
 	auto& particles = m_particle_system->getParticles();
-	for (int i = 0; i < particles.size(); ++i)
+
+	#pragma omp parallel default(shared)
 	{
-		auto neighbors = m_neighbor_searcher->FetchNeighbors(static_cast<size_t>(i));
-		
-		// Reset Lagragian multiplier
-		particles[i]->m_lambda = -particles[i]->m_C;
-		glm::vec3 gradientC = glm::vec3(0, 0, 0);
-
-		for (int j = 0; j < neighbors.size(); ++j)
+		#pragma omp for schedule(static)
+		for (int i = 0; i < particles.size(); ++i)
 		{
-			glm::vec3 diff = particles[i]->m_new_position - particles[j]->m_new_position;
-			float distance = glm::distance(particles[i]->m_new_position, particles[j]->m_new_position);
-			gradientC += (1.f / m_rest_density) * SPHKernel::Spiky_W_Gradient(diff, distance, effective_radius);			
-		}
+			auto neighbors = m_neighbor_searcher->FetchNeighbors(static_cast<size_t>(i));
 
-		particles[i]->m_lambda /= glm::dot(gradientC, gradientC) + epsilon;
+			// Reset Lagragian multiplier
+			particles[i]->m_lambda = -particles[i]->m_C;
+			glm::vec3 gradientC_i = glm::vec3(0, 0, 0);
+			float gradientC_sum = 0.f;
+
+			for (int j = 0; j < neighbors.size(); ++j)
+			{
+				glm::vec3 diff = particles[i]->m_new_position - particles[neighbors[j]]->m_new_position;
+				float distance = glm::distance(particles[i]->m_new_position, particles[neighbors[j]]->m_new_position);
+
+				glm::vec3 gradientC_j = (1.f / m_rest_density) * SPHKernel::Poly6_W_Gradient(diff, distance, effective_radius);
+
+				float dot_value = glm::dot(gradientC_j, gradientC_j);
+
+				gradientC_i += gradientC_j;
+				gradientC_sum += dot_value;
+			}
+			float dot_value = glm::dot(gradientC_i, gradientC_i);
+			gradientC_sum += dot_value;
+			particles[i]->m_lambda /= gradientC_sum + epsilon;
+		}
 	}
 }
 
@@ -183,18 +205,24 @@ void Simulation::ComputeSPHParticlesCorrection(float effective_radius)
 {
 	auto& particles = m_particle_system->getParticles();
 
-	for (int i = 0; i < particles.size(); ++i)
+	#pragma omp parallel default(shared)
 	{
-		auto neighbors = m_neighbor_searcher->FetchNeighbors(static_cast<size_t>(i));
-
-		for (int j = 0; j < neighbors.size(); ++j)
+		#pragma omp for schedule(static)
+		for (int i = 0; i < particles.size(); ++i)
 		{
-			float distance = glm::distance(particles[i]->m_new_position, particles[j]->m_new_position);
+			auto neighbors = m_neighbor_searcher->FetchNeighbors(static_cast<size_t>(i));
 
-			particles[i]->m_new_position += 
-				(1.f/m_rest_density) * 
-				(particles[i]->m_lambda + particles[j]->m_lambda) * 
-				SPHKernel::Poly6_W(distance, effective_radius);
+			for (int j = 0; j < neighbors.size(); ++j)
+			{
+				glm::vec3 diff = particles[i]->m_new_position - particles[neighbors[j]]->m_new_position;
+				float distance = glm::distance(particles[i]->m_new_position, particles[neighbors[j]]->m_new_position);
+
+				glm::vec3 result = (1.f / m_rest_density) *
+					(particles[i]->m_lambda + particles[neighbors[j]]->m_lambda) *
+					SPHKernel::Poly6_W_Gradient(diff, distance, effective_radius);
+
+				particles[i]->m_new_position += result;
+			}
 		}
 	}
 

@@ -42,6 +42,7 @@ public:
 
 	// getters
 	inline float getGravity() { return m_world_desc.gravity; };
+	inline bool  isPause() { return m_pause; };
 private:
 
 	void PredictPositions(float dt);

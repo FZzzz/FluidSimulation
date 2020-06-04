@@ -51,6 +51,7 @@ private:
 	void SignalFail();
 	void SetUpImGui();
 	void GenerateRadomParticles();
+	void GenerateFluidParticles();
 
 	static GLFWApp* appInstance;
 
