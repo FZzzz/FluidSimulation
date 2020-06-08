@@ -2,40 +2,42 @@
 #define _PARTICLE_H_
 
 #include <memory>
+#include <vector>
 #include <glm/common.hpp>
 #include "Collider.h"
 
 class Particle;
 using Particle_Ptr = std::shared_ptr<Particle>;
 
-/*
-struct ParticleData
+class ParticleSet
 {
-	ParticleData(glm::vec3 pos, float m):
-		position(pos), 
-		velocity(glm::vec3(0)),
-		force(glm::vec3(0)),
-		prev_position(glm::vec3(0)),
-		new_position(glm::vec3(0)),
-		mass(m),
-		massInv(1.f/mass)
-	{
-	}
-	glm::vec3	position;
-	glm::vec3	velocity;
-	glm::vec3	force;
+public:
+	ParticleSet(size_t n, float particle_mass);
+	~ParticleSet();
 
-	glm::vec3	prev_position;
-	glm::vec3	prev_force;
+	void Update(float dt);
 
-	glm::vec3   new_position;
-	glm::vec3   new_velocity;
-	glm::vec3	new_force;
+	bool TestCollision(size_t i,Collider* other);
+	void OnCollision(size_t i, Collider* other, float dt);
 
-	float		mass;
-	float		massInv;
+
+	size_t m_size;
+
+	std::vector<glm::vec3>	m_prev_positions;
+	std::vector<glm::vec3>	m_positions;
+	std::vector<glm::vec3>	m_predict_positions;
+	std::vector<glm::vec3>	m_new_positions;
+
+	std::vector<glm::vec3>	m_velocity;
+	std::vector<glm::vec3>	m_force;
+	
+	std::vector<float>		m_mass;
+	std::vector<float>		m_massInv;
+	std::vector<float>		m_density;
+	std::vector<float>		m_C;
+	std::vector<float>		m_lambda;
 };
-*/
+
 
 class Particle
 {

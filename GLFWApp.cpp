@@ -74,7 +74,7 @@ bool GLFWApp::Initialize(int width , int height , const std::string &title)
 	glfwSetWindowPos(m_window, 100, 100);
 	glfwMakeContextCurrent(m_window);
 	glfwSetKeyCallback(m_window, Key_callback);
-	glfwSwapInterval(1);
+	glfwSwapInterval(0);
 
 	// Initialize glew
 	glewExperimental = true;
@@ -182,7 +182,7 @@ bool GLFWApp::Initialize(int width , int height , const std::string &title)
 		m_simulator->AddCollider(collider);
 	}
 
-	GenerateRadomParticles();
+	//GenerateRadomParticles();
 	GenerateFluidParticles();
 	/*
 	 *	End of resource settings
@@ -200,7 +200,7 @@ bool GLFWApp::Initialize(int width , int height , const std::string &title)
 	/* Managers initialization */
 	m_resource_manager->ArrangeStaticObjects();
 	m_simulator->Initialize(PBD_MODE::XPBD, m_particle_system);
-	m_simulator->SetSolverIteration(5);
+	m_simulator->SetSolverIteration(1);
 
 	return true;
 }
@@ -372,13 +372,32 @@ void GLFWApp::GenerateRadomParticles()
 		particles.push_back(particle);
 	}
 
-	m_particle_system->setParticles(particles);
+	//m_particle_system->setParticles(particles);
 	m_particle_system->Update();
 }
 
 void GLFWApp::GenerateFluidParticles()
 {
 	float x, y, z;
+
+	ParticleSet* particles = m_particle_system->AllocateParticles(1000, 0.1f);
+	// set positions
+	for (int i = 0; i < 10; ++i)
+	{
+		for (int j = 0; j < 10; ++j)
+		{
+			for (int k = 0; k < 10; ++k)
+			{
+				int idx = k + j * 10 + i * 100;
+				x = -9.9f + 0.6f * static_cast<float>(i);
+				y = 12.5f + 0.6f * static_cast<float>(j);
+				z = -14.9f + 0.6f * static_cast<float>(k);
+				particles->m_positions[idx] = glm::vec3(x, y, z);
+			}
+		}
+	}
+
+	/*
 	std::vector<Particle_Ptr> particles;
 
 	for (int i = 0; i < 10; ++i)
@@ -397,6 +416,7 @@ void GLFWApp::GenerateFluidParticles()
 	}
 
 	m_particle_system->setParticles(particles);
+	*/
 	m_particle_system->Update();
 }
 

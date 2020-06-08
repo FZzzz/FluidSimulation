@@ -20,8 +20,12 @@ void NeighborSearch::Initialize()
 #ifdef _DEBUG
     assert(m_particle_system != nullptr);
 #endif
+    /*
     const auto& particles = m_particle_system->getParticles();
     m_search_cache.resize(particles.size(), std::vector<size_t>());
+    */
+    const ParticleSet* const particles = m_particle_system->getParticles();
+    m_search_cache.resize(particles->m_size, std::vector<size_t>());
 }
 
 /*
@@ -35,6 +39,25 @@ void NeighborSearch::NaiveSearch(float effective_radius)
     for (size_t i = 0; i < m_search_cache.size(); ++i)
         m_search_cache[i].clear();
 
+    const float square_h = effective_radius * effective_radius;
+    const ParticleSet* const particles = m_particle_system->getParticles();
+    //#pragma omp parallel default(shared) // Personally I think this is useless... (cannot prevent race condition)
+    {
+        //#pragma omp for schedule(static)  // Using round-robin scheduling
+        for (int i = 0; i < particles->m_size; ++i)
+        {
+            for (int j = i + 1; j < particles->m_size; ++j)
+            {
+                float distance2 = glm::distance2(particles->m_new_positions[i], particles->m_new_positions[j]);
+                if (distance2 <= square_h)
+                {
+                    m_search_cache[i].push_back(static_cast<size_t>(j));
+                    m_search_cache[j].push_back(static_cast<size_t>(i));
+                }
+            }
+        }
+    }
+    /*
     const auto& particles = m_particle_system->getParticles();
     float square_h = effective_radius * effective_radius;
 
@@ -54,6 +77,7 @@ void NeighborSearch::NaiveSearch(float effective_radius)
             }
         }
     }
+    */
 }
 
 const std::vector<size_t>& NeighborSearch::FetchNeighbors(size_t i)
