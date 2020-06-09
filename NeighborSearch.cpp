@@ -100,6 +100,9 @@ void NeighborSearch::SpatialSearch(float effective_radius)
             entry.second->particles.clear();
     }
 
+    for (size_t i = 0; i < m_search_cache.size(); ++i)
+        m_search_cache[i].clear();
+
     for (size_t i = 0; i < particles->m_size; ++i)
     {
         // Flooring 
@@ -148,7 +151,6 @@ void NeighborSearch::SpatialSearch(float effective_radius)
                     search_idx.x = grid_index.x + x;
                     search_idx.y = grid_index.y + y;
                     search_idx.z = grid_index.z + z;
-
 
                     uint32_t hash_value = GetHashValue(search_idx);
                     

@@ -64,7 +64,7 @@ public:
 			double q = h - d;
 			double q3 = q * q * q;
 
-			double result = static_cast<float>((15.0 / (M_PI * h6)) * q3);
+			float result = static_cast<float>((15.0 / (M_PI * h6)) * q3);
 
 			return result;
 		}

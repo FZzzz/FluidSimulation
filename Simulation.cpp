@@ -168,8 +168,8 @@ void Simulation::PredictPositions(float dt)
 
 void Simulation::FindNeighborParticles(float effective_radius)
 {
-	m_neighbor_searcher->NaiveSearch(effective_radius);
-	//m_neighbor_searcher->SpatialSearch(effective_radius);
+	//m_neighbor_searcher->NaiveSearch(effective_radius);
+	m_neighbor_searcher->SpatialSearch(effective_radius);
 }
 
 void Simulation::ComputeDensity(float effective_radius)

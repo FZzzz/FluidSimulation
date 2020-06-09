@@ -382,15 +382,15 @@ void GLFWApp::GenerateFluidParticles()
 {
 	float x, y, z;
 
-	ParticleSet* particles = m_particle_system->AllocateParticles(1000, 0.1f);
+	ParticleSet* particles = m_particle_system->AllocateParticles(10000, 0.1f);
 	// set positions
 	for (int i = 0; i < 10; ++i)
 	{
-		for (int j = 0; j < 10; ++j)
+		for (int j = 0; j < 100; ++j)
 		{
 			for (int k = 0; k < 10; ++k)
 			{
-				int idx = k + j * 10 + i * 100;
+				int idx = k + j * 10 + i * 1000;
 				x = 0.f + 0.5f * static_cast<float>(i);
 				y = 12.5f + 0.5f * static_cast<float>(j);
 				z = -10.f + 0.5f * static_cast<float>(k);
