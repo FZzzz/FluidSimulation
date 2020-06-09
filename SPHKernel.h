@@ -10,13 +10,18 @@ public:
 	{
 		if (distance >= 0 && distance <= effective_radius)
 		{
-			float h2 = effective_radius * effective_radius;
-			float h9 = glm::pow(effective_radius, 9);
-			float d2 = distance * distance;
-			float q = h2 - d2;
-			float q3 = q * q * q;
+			const double h = static_cast<double>(effective_radius);
+			const double d = static_cast<double>(distance);
+
+			double h2 = h * h;
+			double h9 = glm::pow(h, 9);
+			double d2 = d * d;
+			double q = h2 - d2;
+			double q3 = q * q * q;
 			
-			return (315.f / (64.f * M_PI * h9)) * q3;
+			double result = (315.0 / (64.0 * M_PI * h9)) * q3;
+
+			return static_cast<float>(result);
 		}
 		else
 		{
@@ -28,13 +33,19 @@ public:
 	{
 		if (distance >= 0 && distance <= effective_radius)
 		{
-			float h2 = effective_radius * effective_radius;
-			float h9 = glm::pow(effective_radius, 9);
-			float d2 = distance * distance;
-			float q = h2 - d2;
-			float q2 = q * q;
+			const double h = static_cast<double>(effective_radius);
+			const double d = static_cast<double>(distance);
 
-			return (-945.f/ (32.f * M_PI * h9)) * q2 * diff;
+			double h2 = h * h;
+			double h9 = glm::pow(h, 9);
+			double d2 = d * d;
+			double  q = h2 - d2;
+			double q2 = q * q;
+
+			double scalar = (-945.0 / (32.0 * M_PI * h9));
+			glm::vec3 result = static_cast<float>(scalar) * static_cast<float>(q2) * diff;
+
+			return result;
 		}
 		else
 		{
@@ -46,11 +57,16 @@ public:
 	{
 		if (distance >= 0 && distance <= effective_radius)
 		{
-			float h6 = glm::pow(effective_radius, 6);
-			float q = effective_radius - distance;
-			float q3 = q * q * q;
+			const double h = static_cast<double>(effective_radius);
+			const double d = static_cast<double>(distance);
 
-			return (15.f / (M_PI * h6)) * q3;
+			double h6 = glm::pow(h, 6);
+			double q = h - d;
+			double q3 = q * q * q;
+
+			double result = static_cast<float>((15.0 / (M_PI * h6)) * q3);
+
+			return result;
 		}
 		else
 		{
@@ -63,11 +79,16 @@ public:
 	{
 		if (distance >= 0 && distance <= effective_radius)
 		{
-			float h6 = glm::pow(effective_radius, 6);
-			float q = effective_radius - distance;
-			float q2 = q * q;
+			const double h = static_cast<double>(effective_radius);
+			const double d = static_cast<double>(distance);
+			double h6 = glm::pow(h, 6);
+			double q = h - d;
+			double q2 = q * q;
 
-			return (-45.f / (M_PI * h6)) * (q2/distance) * diff;
+			double scalar = (-45.0 / (M_PI * h6)) * (q2 / distance);
+			glm::vec3 result = static_cast<float>(scalar) * diff;
+
+			return result;
 		}
 		else
 		{

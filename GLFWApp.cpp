@@ -172,6 +172,7 @@ bool GLFWApp::Initialize(int width , int height , const std::string &title)
 		m_resource_manager->AddGameObject(static_pointer_cast<GameObject>(plane_terrain));
 		m_simulator->AddCollider(plane_terrain->getCollider());
 
+		/*
 		auto collider = new PlaneCollider(glm::vec3(1, 0, 0), -10);
 		m_simulator->AddCollider(collider);
 		collider = new PlaneCollider(glm::vec3(-1, 0, 0), -10);
@@ -180,6 +181,7 @@ bool GLFWApp::Initialize(int width , int height , const std::string &title)
 		m_simulator->AddCollider(collider);
 		collider = new PlaneCollider(glm::vec3(0, 0, -1), 1);
 		m_simulator->AddCollider(collider);
+		*/
 	}
 
 	//GenerateRadomParticles();
@@ -389,10 +391,11 @@ void GLFWApp::GenerateFluidParticles()
 			for (int k = 0; k < 10; ++k)
 			{
 				int idx = k + j * 10 + i * 100;
-				x = -9.9f + 0.6f * static_cast<float>(i);
-				y = 12.5f + 0.6f * static_cast<float>(j);
-				z = -14.9f + 0.6f * static_cast<float>(k);
+				x = 0.f + 0.5f * static_cast<float>(i);
+				y = 12.5f + 0.5f * static_cast<float>(j);
+				z = -10.f + 0.5f * static_cast<float>(k);
 				particles->m_positions[idx] = glm::vec3(x, y, z);
+				particles->m_new_positions[idx] = particles->m_positions[idx];
 			}
 		}
 	}

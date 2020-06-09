@@ -327,8 +327,8 @@ void ParticleSet::OnCollision(size_t i, Collider* other, float dt)
 
 
 	/* Restitution */
-	m_velocity[i] = 0.87f * m_velocity[i];
+	m_velocity[i] = 0.3f * m_velocity[i];
 
 	/*Re-prediction*/
-	m_new_positions[i] = m_positions[i] + dt * m_velocity[i];
+	m_new_positions[i] = m_positions[i];// +dt * m_velocity[i];
 }

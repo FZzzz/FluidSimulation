@@ -35,6 +35,7 @@ public:
 	void AddStaticConstraints(std::vector<Constraint*> constraints);
 	void SetSolverIteration(uint32_t iter_count);
 
+
 	void Pause();
 
 	// setters
@@ -48,6 +49,7 @@ private:
 	void PredictPositions(float dt);
 	void FindNeighborParticles(float effective_radius);
 	
+	void ComputeRestDensity();
 	void ComputeDensity(float effective_radius);
 	void ComputeLambdas(float effective_radius);
 	void ComputeSPHParticlesCorrection(float effective_radius);
@@ -63,6 +65,7 @@ private:
 
 	SimWorldDesc m_world_desc;
 	bool m_initialized;
+	bool m_first_frame;
 	bool m_pause;
 
 	float m_rest_density;
