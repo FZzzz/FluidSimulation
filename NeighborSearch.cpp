@@ -10,7 +10,7 @@
 
 
 NeighborSearch::NeighborSearch(std::shared_ptr<ParticleSystem> particle_system):
-    m_particle_system(particle_system), m_grid_spacing(2.f)
+    m_particle_system(particle_system), m_grid_spacing(1.f)
 {
 }
 
@@ -103,76 +103,83 @@ void NeighborSearch::SpatialSearch(float effective_radius)
     for (size_t i = 0; i < m_search_cache.size(); ++i)
         m_search_cache[i].clear();
 
-    for (size_t i = 0; i < particles->m_size; ++i)
+    //#pragma omp parallel default(shared)
     {
-        // Flooring 
-        glm::i32vec3 grid_index = Flooring(particles->m_positions[i]);
-        // Hashing
-        uint32_t hash_value = GetHashValue(grid_index);
-        // Filling in table
-        if (m_hashtable.find(hash_value) == m_hashtable.end())
+        //#pragma omp for schedule(dynamic)
+        for (int i = 0; i < particles->m_size; ++i)
         {
-            HashEntry* entry = new HashEntry();
-
-            // Particles tend to occur nearby, so we allocate a small space for other particles
-            entry->particles.reserve(PRE_ALLOCATE_ENTRY_SIZE);
-            entry->particles.push_back(i);
-            m_hashtable.emplace(hash_value, entry);
-        }
-        else
-        {
-            if (m_hashtable[hash_value] != nullptr)
-            {
-                HashEntry* entry = m_hashtable[hash_value];
-                entry->particles.push_back(i);
-            }
-            else
+            // Flooring 
+            glm::i32vec3 grid_index = Flooring(particles->m_predict_positions[i]);
+            // Hashing
+            uint32_t hash_value = GetHashValue(grid_index);
+            // Filling in table
+            if (m_hashtable.find(hash_value) == m_hashtable.end())
             {
                 HashEntry* entry = new HashEntry();
+
+                // Particles tend to occur nearby, so we allocate a small space for other particles
                 entry->particles.reserve(PRE_ALLOCATE_ENTRY_SIZE);
                 entry->particles.push_back(i);
                 m_hashtable.emplace(hash_value, entry);
             }
+            else
+            {
+                if (m_hashtable[hash_value] != nullptr)
+                {
+                    HashEntry* entry = m_hashtable[hash_value];
+                    entry->particles.push_back(i);
+                }
+                else
+                {
+                    HashEntry* entry = new HashEntry();
+                    entry->particles.reserve(PRE_ALLOCATE_ENTRY_SIZE);
+                    entry->particles.push_back(i);
+                    m_hashtable.emplace(hash_value, entry);
+                }
+            }
         }
     }
-    
-    // Filling search cache
-    for (size_t i = 0; i < particles->m_size; ++i)
+    #pragma omp parallel default(shared) num_threads(8)
     {
-        // Search 27 neighbor cells
-        for (int32_t x = -1; x < 2; ++x)
+        // Filling search cache
+        #pragma omp for schedule(dynamic)
+        for (int i = 0; i < particles->m_size; ++i)
         {
-            for (int32_t y = -1; y < 2; ++y)
+            // Search 27 neighbor cells
+            for (int32_t x = -1; x < 2; ++x)
             {
-                for (int32_t z = -1; z < 2; ++z)
+                for (int32_t y = -1; y < 2; ++y)
                 {
-                    glm::i32vec3 grid_index = Flooring(particles->m_positions[i]);
-                    glm::i32vec3 search_idx = grid_index;
-                    search_idx.x = grid_index.x + x;
-                    search_idx.y = grid_index.y + y;
-                    search_idx.z = grid_index.z + z;
-
-                    uint32_t hash_value = GetHashValue(search_idx);
-                    
-                    if (m_hashtable.find(hash_value) != m_hashtable.end())
+                    for (int32_t z = -1; z < 2; ++z)
                     {
-                        HashEntry* entry = m_hashtable[hash_value];
-                        
-                        for (int j = 0; j < entry->particles.size(); ++j)
+                        glm::i32vec3 grid_index = Flooring(particles->m_predict_positions[i]);
+                        glm::i32vec3 search_idx = grid_index;
+                        search_idx.x = grid_index.x + x;
+                        search_idx.y = grid_index.y + y;
+                        search_idx.z = grid_index.z + z;
+
+                        uint32_t hash_value = GetHashValue(search_idx);
+
+                        if (m_hashtable.find(hash_value) != m_hashtable.end())
                         {
-                            size_t p_j = entry->particles[j];
+                            HashEntry* entry = m_hashtable[hash_value];
 
-                            if (p_j == i)
-                                continue;
-
-                            float distance2 = glm::distance2(
-                                particles->m_new_positions[i], 
-                                particles->m_new_positions[p_j]
-                            );
-
-                            if (distance2 <= square_h)
+                            for (int j = 0; j < entry->particles.size(); ++j)
                             {
-                                m_search_cache[i].push_back(static_cast<size_t>(p_j));
+                                size_t p_j = entry->particles[j];
+
+                                if (p_j == i)
+                                    continue;
+
+                                float distance2 = glm::distance2(
+                                    particles->m_predict_positions[i],
+                                    particles->m_predict_positions[p_j]
+                                );
+
+                                if (distance2 <= square_h)
+                                {
+                                    m_search_cache[i].push_back(static_cast<size_t>(p_j));
+                                }
                             }
                         }
                     }

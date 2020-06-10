@@ -396,6 +396,7 @@ void GLFWApp::GenerateFluidParticles()
 				z = -10.f + 0.5f * static_cast<float>(k);
 				particles->m_positions[idx] = glm::vec3(x, y, z);
 				particles->m_new_positions[idx] = particles->m_positions[idx];
+				particles->m_predict_positions[idx] = particles->m_positions[idx];
 			}
 		}
 	}

@@ -53,6 +53,7 @@ private:
 	void ComputeDensity(float effective_radius);
 	void ComputeLambdas(float effective_radius);
 	void ComputeSPHParticlesCorrection(float effective_radius);
+	void UpdatePredictPosition();
 	
 	void CollisionDetection(float dt);
 	void HandleCollisionResponse();
