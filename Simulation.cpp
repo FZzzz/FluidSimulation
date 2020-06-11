@@ -8,7 +8,7 @@
 
 Simulation::Simulation()
 	: m_solver(nullptr), m_particle_system(nullptr), m_neighbor_searcher(nullptr),
-	m_initialized(false), m_world_desc(SimWorldDesc(-9.8f, 0.f)), m_pause(true),
+	m_initialized(false), m_world_desc(SimWorldDesc(-9.8f, 0.f)), m_pause(false),
 	m_first_frame(false),
 	m_rest_density(0.8f)
 {
@@ -107,20 +107,25 @@ void Simulation::ComputeRestDensity()
 	ParticleSet* const particles = m_particle_system->getParticles();
 
 	m_rest_density = 0;
-
-	for (int i = 0; i < particles->m_size; ++i)
+	
+	#pragma omp parallel default(shared) num_threads(8)
 	{
-		auto neighbors = m_neighbor_searcher->FetchNeighbors(static_cast<size_t>(i));
-		particles->m_density[i] = particles->m_mass[i] * SPHKernel::Poly6_W(0, effective_radius);
-
-
-		for (int j = 0; j < neighbors.size(); ++j)
+		#pragma omp for schedule(dynamic)
+		for (int i = 0; i < particles->m_size; ++i)
 		{
-			float distance = glm::distance(particles->m_positions[i], particles->m_positions[neighbors[j]]);
-			particles->m_density[i] += particles->m_mass[neighbors[j]] * SPHKernel::Poly6_W(distance, effective_radius);
+			auto neighbors = m_neighbor_searcher->FetchNeighbors(static_cast<size_t>(i));
+			particles->m_density[i] = particles->m_mass[i] * SPHKernel::Poly6_W(0, effective_radius);
+
+
+			for (int j = 0; j < neighbors.size(); ++j)
+			{
+				float distance = glm::distance(particles->m_positions[i], particles->m_positions[neighbors[j]]);
+				particles->m_density[i] += particles->m_mass[neighbors[j]] * SPHKernel::Poly6_W(distance, effective_radius);
+			}
+			m_rest_density += particles->m_density[i];
 		}
-		m_rest_density += particles->m_density[i];
 	}
+
 	m_rest_density /= static_cast<float>(particles->m_size);
 	m_first_frame = true;
 }
@@ -150,22 +155,7 @@ void Simulation::PredictPositions(float dt)
 		particles->m_predict_positions[i] = particles->m_positions[i] + dt * particles->m_velocity[i];
 		particles->m_new_positions[i] = particles->m_predict_positions[i];
 	}
-	/*
-	for (auto p : m_particle_system->getParticles())
-	{
-		// external forces
-		p->m_force = p->m_mass * glm::vec3(0, m_world_desc.gravity, 0);
 
-		p->m_velocity = p->m_velocity + dt * p->m_massInv * p->m_force;
-		
-		// dampVelocity()
-
-		p->m_new_position = p->m_position + dt * p->m_velocity;
-
-		// Update colliders
-		p->UpdateCollider();
-	}
-	*/
 }
 
 void Simulation::FindNeighborParticles(float effective_radius)
@@ -186,7 +176,7 @@ void Simulation::ComputeDensity(float effective_radius)
 	*/
 	ParticleSet* const particles = m_particle_system->getParticles();
 
-	#pragma omp parallel default(shared)
+	#pragma omp parallel default(shared) num_threads(8)
 	{
 		#pragma omp for schedule(dynamic)
 		for (int i = 0; i < particles->m_size; ++i)
@@ -205,27 +195,7 @@ void Simulation::ComputeDensity(float effective_radius)
 			particles->m_C[i] = particles->m_density[i] / m_rest_density - 1.f;
 		}
 	}
-	/*
-	auto& particles = m_particle_system->getParticles();
 
-	#pragma omp parallel default(shared)
-	{
-		#pragma omp for schedule(dynamic)
-		for (int i = 0; i < particles.size(); ++i)
-		{
-			auto neighbors = m_neighbor_searcher->FetchNeighbors(static_cast<size_t>(i));
-			particles[i]->m_density = particles[i]->m_mass * SPHKernel::Poly6_W(0, effective_radius);
-
-
-			for (int j = 0; j < neighbors.size(); ++j)
-			{
-				float distance = glm::distance(particles[i]->m_new_position, particles[neighbors[j]]->m_new_position);
-				particles[i]->m_density += particles[neighbors[j]]->m_mass * SPHKernel::Poly6_W(distance, effective_radius);
-			}
-			particles[i]->m_C = particles[i]->m_density / m_rest_density - 1.f;
-		}
-	}
-	*/
 }
 
 void Simulation::ComputeLambdas(float effective_radius)
@@ -234,7 +204,7 @@ void Simulation::ComputeLambdas(float effective_radius)
 	/* Compute density constraints */
 	ParticleSet* const particles = m_particle_system->getParticles();
 
-	#pragma omp parallel default(shared)
+	#pragma omp parallel default(shared) num_threads(8)
 	{
 		#pragma omp for schedule(dynamic)
 		for (int i = 0; i < particles->m_size; ++i)
@@ -263,46 +233,14 @@ void Simulation::ComputeLambdas(float effective_radius)
 			particles->m_lambda[i] /= gradientC_sum + epsilon;
 		}
 	}
-	/*
-	auto& particles = m_particle_system->getParticles();
 
-	#pragma omp parallel default(shared)
-	{
-		#pragma omp for schedule(dynamic)
-		for (int i = 0; i < particles.size(); ++i)
-		{
-			auto neighbors = m_neighbor_searcher->FetchNeighbors(static_cast<size_t>(i));
-
-			// Reset Lagragian multiplier
-			particles[i]->m_lambda = -particles[i]->m_C;
-			glm::vec3 gradientC_i = glm::vec3(0, 0, 0);
-			float gradientC_sum = 0.f;
-
-			for (int j = 0; j < neighbors.size(); ++j)
-			{
-				glm::vec3 diff = particles[i]->m_new_position - particles[neighbors[j]]->m_new_position;
-				float distance = glm::distance(particles[i]->m_new_position, particles[neighbors[j]]->m_new_position);
-
-				glm::vec3 gradientC_j = (1.f / m_rest_density) * SPHKernel::Poly6_W_Gradient(diff, distance, effective_radius);
-
-				float dot_value = glm::dot(gradientC_j, gradientC_j);
-
-				gradientC_i += gradientC_j;
-				gradientC_sum += dot_value;
-			}
-			float dot_value = glm::dot(gradientC_i, gradientC_i);
-			gradientC_sum += dot_value;
-			particles[i]->m_lambda /= gradientC_sum + epsilon;
-		}
-	}
-	*/
 }
 
 void Simulation::ComputeSPHParticlesCorrection(float effective_radius)
 {
 	ParticleSet* const particles = m_particle_system->getParticles();
 
-	#pragma omp parallel default(shared)
+	#pragma omp parallel default(shared) num_threads(8)
 	{
 		#pragma omp for schedule(dynamic)
 		for (int i = 0; i < particles->m_size; ++i)
@@ -329,30 +267,6 @@ void Simulation::ComputeSPHParticlesCorrection(float effective_radius)
 			}
 		}
 	}
-	/*
-	auto& particles = m_particle_system->getParticles();
-
-	#pragma omp parallel default(shared)
-	{
-		#pragma omp for schedule(dynamic)
-		for (int i = 0; i < particles.size(); ++i)
-		{
-			auto neighbors = m_neighbor_searcher->FetchNeighbors(static_cast<size_t>(i));
-
-			for (int j = 0; j < neighbors.size(); ++j)
-			{
-				glm::vec3 diff = particles[i]->m_new_position - particles[neighbors[j]]->m_new_position;
-				float distance = glm::distance(particles[i]->m_new_position, particles[neighbors[j]]->m_new_position);
-
-				glm::vec3 result = (1.f / m_rest_density) *
-					(particles[i]->m_lambda + particles[neighbors[j]]->m_lambda) *
-					SPHKernel::Poly6_W_Gradient(diff, distance, effective_radius);
-
-				particles[i]->m_new_position += result;
-			}
-		}
-	}
-	*/
 }
 
 void Simulation::UpdatePredictPosition()
@@ -381,21 +295,6 @@ void Simulation::CollisionDetection(float dt)
 				particles->OnCollision(i, m_colliders[j], dt);
 		}
 	}
-
-
-	/*
-	auto& particles = m_particle_system->getParticles();
-	for (size_t i = 0; i < particles.size(); ++i)
-	{
-		const glm::vec3& point_pos = particles[i]->m_new_position;
-
-		for (size_t j = 0; j < m_colliders.size(); ++j)
-		{
-			if (particles[i]->TestCollision(m_colliders[j]))
-				particles[i]->OnCollision(m_colliders[j], dt);
-		}
-	}
-	*/
 
 	// TODO: Change to m_rigidbodies[i], m_rigidbodies[j]
 	for (size_t i = 0; i < m_colliders.size(); ++i)
@@ -445,36 +344,6 @@ void Simulation::AddCollisionConstraint(Constraint* constraint)
 
 void Simulation::ApplySolverResults(float dt)
 {
-	/*
-	for(auto p : m_particle_system->getParticles())
-	{
-		p->Update(dt);
-	}
-	*/
 	m_particle_system->getParticles()->Update(dt);
 	m_particle_system->Update();
-/*
-#if _DEBUG	
-	std::cout << particles[0]->position.x << " "
-		<< particles[1]->position.x << std::endl;
-#endif
-*/
-/*
-#ifdef _DEBUG
-	{
-		ImGui::Begin("Particles");
-		float p0[3] = { particles[0]->position.x,
-						particles[0]->position.y,
-						particles[0]->position.z };
-		ImGui::InputFloat3("P0 position", p0, 5, ImGuiInputTextFlags_ReadOnly);
-
-		float p1[3] = { particles[1]->position.x,
-						particles[1]->position.y,
-						particles[1]->position.z };
-		ImGui::InputFloat3("P1 position", p1, 5, ImGuiInputTextFlags_ReadOnly);
-		ImGui::End();
-	}
-#endif
-*/
-
 }
