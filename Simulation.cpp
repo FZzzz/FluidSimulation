@@ -68,7 +68,7 @@ bool Simulation::Step(float dt)
 	{		
 		ComputeDensity(effective_radius);
 		ComputeLambdas(effective_radius);
-		ComputeSPHParticlesCorrection(effective_radius);
+		ComputeSPHParticlesCorrection(effective_radius, dt);
 		UpdatePredictPosition();
 	}
 	
@@ -236,7 +236,7 @@ void Simulation::ComputeLambdas(float effective_radius)
 
 }
 
-void Simulation::ComputeSPHParticlesCorrection(float effective_radius)
+void Simulation::ComputeSPHParticlesCorrection(float effective_radius, float dt)
 {
 	ParticleSet* const particles = m_particle_system->getParticles();
 
@@ -255,9 +255,9 @@ void Simulation::ComputeSPHParticlesCorrection(float effective_radius)
 				// Artificial pressure
 				double scorr = -0.1;
 				double x = SPHKernel::Poly6_W(distance, effective_radius) / 
-					SPHKernel::Poly6_W(0.05f * effective_radius, effective_radius);
+					SPHKernel::Poly6_W(0.3f * effective_radius, effective_radius);
 				x = glm::pow(x, 4);
-				scorr = scorr * x;
+				scorr = scorr * x * dt;
 
 				glm::vec3 result = (1.f / m_rest_density) *
 					(particles->m_lambda[i] + particles->m_lambda[neighbors[j]] + static_cast<float>(scorr)) *

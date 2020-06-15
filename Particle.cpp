@@ -217,24 +217,24 @@ bool ParticleSet::TestCollision(size_t i, Collider* other)
 	{
 	case Collider::ColliderTypes::SPHERE:
 		result = CollisionDetection::PointSphereIntersection(
-			m_new_positions[i], dynamic_cast<SphereCollider*>(other));
+			m_predict_positions[i], dynamic_cast<SphereCollider*>(other));
 		break;
 
 	case Collider::ColliderTypes::AABB:
 		result = CollisionDetection::PointAABBIntersection(
-			m_new_positions[i], dynamic_cast<AABB*>(other)
+			m_predict_positions[i], dynamic_cast<AABB*>(other)
 		);
 		break;
 
 	case Collider::ColliderTypes::OBB:
 		result = CollisionDetection::PointOBBIntersection(
-			m_new_positions[i], dynamic_cast<OBB*>(other)
+			m_predict_positions[i], dynamic_cast<OBB*>(other)
 		);
 		break;
 
 	case Collider::ColliderTypes::PLANE:
 		result = CollisionDetection::PointPlaneIntersection(
-			m_new_positions[i], dynamic_cast<PlaneCollider*>(other)
+			m_predict_positions[i], dynamic_cast<PlaneCollider*>(other)
 		);
 		break;
 	}
@@ -253,7 +253,7 @@ void ParticleSet::OnCollision(size_t i, Collider* other, float dt)
 	case Collider::ColliderTypes::SPHERE:
 	{
 		SphereCollider* sphere = dynamic_cast<SphereCollider*>(other);
-		normal = m_new_positions[i] - sphere->m_center;
+		normal = m_predict_positions[i] - sphere->m_center;
 
 		if (glm::dot(normal, normal) == 0)
 			v_r = -m_velocity[i];
@@ -269,8 +269,8 @@ void ParticleSet::OnCollision(size_t i, Collider* other, float dt)
 	{
 		AABB* aabb = dynamic_cast<AABB*>(other);
 
-		glm::vec3 diff2max = aabb->m_max - m_new_positions[i];
-		glm::vec3 diff2min = m_new_positions[i] - aabb->m_min;
+		glm::vec3 diff2max = aabb->m_max - m_predict_positions[i];
+		glm::vec3 diff2min = m_predict_positions[i] - aabb->m_min;
 
 		glm::vec3 normal_preset[6] =
 		{
@@ -327,8 +327,9 @@ void ParticleSet::OnCollision(size_t i, Collider* other, float dt)
 
 
 	/* Restitution */
-	m_velocity[i] = 0.3f * m_velocity[i];
+	m_velocity[i] = 0.99f * m_velocity[i];
 
 	/*Re-prediction*/
-	m_new_positions[i] = m_positions[i];// +dt * m_velocity[i];
+	m_predict_positions[i] = m_positions[i] + dt * m_velocity[i];
+	m_new_positions[i] = m_predict_positions[i];
 }

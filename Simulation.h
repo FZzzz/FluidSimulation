@@ -52,7 +52,7 @@ private:
 	void ComputeRestDensity();
 	void ComputeDensity(float effective_radius);
 	void ComputeLambdas(float effective_radius);
-	void ComputeSPHParticlesCorrection(float effective_radius);
+	void ComputeSPHParticlesCorrection(float effective_radius, float dt);
 	void UpdatePredictPosition();
 	
 	void CollisionDetection(float dt);
