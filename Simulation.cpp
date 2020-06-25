@@ -5,11 +5,14 @@
 #include <iostream>
 #include "imgui/imgui.h"
 #include <omp.h>
+#include <chrono>
+#include "CUDASimulation.cuh"
+#include <cuda_gl_interop.h>
 
 Simulation::Simulation()
 	: m_solver(nullptr), m_particle_system(nullptr), m_neighbor_searcher(nullptr),
 	m_initialized(false), m_world_desc(SimWorldDesc(-9.8f, 0.f)), m_pause(false),
-	m_first_frame(false),
+	m_first_frame(true),
 	m_rest_density(0.8f)
 {
 	
@@ -49,17 +52,20 @@ bool Simulation::Step(float dt)
 		return true;
 
 	const float effective_radius = 1.f;
+	std::chrono::steady_clock::time_point t1, t2, t3, t4, t5;
 
 	PredictPositions(dt);
 
+	t1 = std::chrono::high_resolution_clock::now();
 	CollisionDetection(dt);
 	HandleCollisionResponse();
 	GenerateCollisionConstraint();
 
+	t2 = std::chrono::high_resolution_clock::now();
 	FindNeighborParticles(effective_radius);
 
-	
-	if (!m_first_frame)
+	t3 = std::chrono::high_resolution_clock::now();
+	if (m_first_frame)
 		ComputeRestDensity();
 	
 	//m_rest_density = 10.f / 12.f;
@@ -71,11 +77,98 @@ bool Simulation::Step(float dt)
 		ComputeSPHParticlesCorrection(effective_radius, dt);
 		UpdatePredictPosition();
 	}
+	t4 = std::chrono::high_resolution_clock::now();
 	
  	if (!ProjectConstraints(dt))
 		return false;
 
 	ApplySolverResults(dt);
+
+	{
+		ImGui::Begin("Performance");
+		ImGui::Text("Collision:\t %.5lf (ms)", (t2 - t1).count() / 1000000.0);
+		ImGui::Text("Searching:\t %.5lf (ms)", (t3 - t2).count() / 1000000.0);
+		ImGui::Text("Correction:\t%.5lf (ms)", (t4 - t3).count() / 1000000.0);
+		ImGui::Text("GL update:\t%.5lf (ms)", m_particle_system->getUpdateTime());
+		ImGui::End();
+	}
+
+	size_t glm_size = sizeof(glm::vec3);
+	size_t cu_size = sizeof(float3);
+
+	return true;
+}
+
+bool Simulation::StepCUDA(float dt)
+{
+	if (!m_initialized)
+		return false;
+
+	if (m_pause)
+		return true;
+	
+	const float effective_radius = 1.f;
+	std::chrono::steady_clock::time_point t1, t2, t3, t4, t5;
+
+	ParticleSet* particles = m_particle_system->getParticles();
+	cudaGraphicsResource** vbo_resource = m_particle_system->getCUDAGraphicsResource();
+	glm::vec3* positions = particles->m_positions.data();
+
+	// Map vbo to m_d_positinos
+	cudaGraphicsMapResources(1, vbo_resource, 0);
+
+	float3* pos;
+	size_t num_bytes;
+	cudaGraphicsResourceGetMappedPointer((void**)&(particles->m_d_positions), &num_bytes, *vbo_resource);
+	
+	/*
+	// Launch kernels
+	PredictPositions(dt);
+
+	t1 = std::chrono::high_resolution_clock::now();
+	CollisionDetection(dt);
+	HandleCollisionResponse();
+	GenerateCollisionConstraint();
+
+	t2 = std::chrono::high_resolution_clock::now();
+	FindNeighborParticles(effective_radius);
+
+	t3 = std::chrono::high_resolution_clock::now();
+	if (!m_first_frame)
+		ComputeRestDensity();
+
+	for (uint32_t i = 0; i < m_solver->getSolverIteration(); ++i)
+	{
+		ComputeDensity(effective_radius);
+		ComputeLambdas(effective_radius);
+		ComputeSPHParticlesCorrection(effective_radius, dt);
+		UpdatePredictPosition();
+	}
+	t4 = std::chrono::high_resolution_clock::now();
+
+	if (!ProjectConstraints(dt))
+		return false;
+
+	ApplySolverResults(dt);
+
+	{
+		ImGui::Begin("Performance");
+		ImGui::Text("Collision:\t %.5lf (ms)", (t2 - t1).count() / 1000000.0);
+		ImGui::Text("Searching:\t %.5lf (ms)", (t3 - t2).count() / 1000000.0);
+		ImGui::Text("Correction:\t%.5lf (ms)", (t4 - t3).count() / 1000000.0);
+		ImGui::Text("GL update:\t%.5lf (ms)", m_particle_system->getUpdateTime());
+		ImGui::End();
+	}
+	*/
+	cuda_test_offset(50, 200, particles->m_d_positions);
+
+	// Fetch Result
+	cudaMemcpy(positions, particles->m_d_positions, particles->m_size * sizeof(float3), cudaMemcpyDeviceToHost);
+
+	// Unmap CUDA buffer object
+	cudaGraphicsUnmapResources(1, vbo_resource, 0);
+
+	m_particle_system->Update();
 
 	return true;
 }
@@ -108,9 +201,9 @@ void Simulation::ComputeRestDensity()
 
 	m_rest_density = 0;
 	
-	#pragma omp parallel default(shared) num_threads(8)
+	//#pragma omp parallel default(shared) num_threads(8)
 	{
-		#pragma omp for schedule(dynamic)
+		//#pragma omp for schedule(dynamic)
 		for (int i = 0; i < particles->m_size; ++i)
 		{
 			auto neighbors = m_neighbor_searcher->FetchNeighbors(static_cast<size_t>(i));
@@ -127,7 +220,7 @@ void Simulation::ComputeRestDensity()
 	}
 
 	m_rest_density /= static_cast<float>(particles->m_size);
-	m_first_frame = true;
+	m_first_frame = false;
 }
 
 void Simulation::Pause()
@@ -148,12 +241,17 @@ void Simulation::PredictPositions(float dt)
 	 * 2. damp velocities 	
 	 */
 	ParticleSet* particles = m_particle_system->getParticles();
-	for (size_t i = 0; i < particles->m_size; ++i)
+
+#pragma omp parallel default(shared) num_threads(8)
 	{
-		particles->m_force[i] = particles->m_mass[i] * glm::vec3(0, m_world_desc.gravity, 0);
-		particles->m_velocity[i] = particles->m_velocity[i] + dt * particles->m_massInv[i] * particles->m_force[i];
-		particles->m_predict_positions[i] = particles->m_positions[i] + dt * particles->m_velocity[i];
-		particles->m_new_positions[i] = particles->m_predict_positions[i];
+		#pragma omp for schedule(static)
+		for (int i = 0; i < particles->m_size; ++i)
+		{
+			particles->m_force[i] = particles->m_mass[i] * glm::vec3(0, m_world_desc.gravity, 0);
+			particles->m_velocity[i] = particles->m_velocity[i] + dt * particles->m_massInv[i] * particles->m_force[i];
+			particles->m_predict_positions[i] = particles->m_positions[i] + dt * particles->m_velocity[i];
+			particles->m_new_positions[i] = particles->m_predict_positions[i];
+		}
 	}
 
 }

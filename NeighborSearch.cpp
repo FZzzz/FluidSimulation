@@ -44,9 +44,9 @@ void NeighborSearch::NaiveSearch(float effective_radius)
 
     const float square_h = effective_radius * effective_radius;
     const ParticleSet* const particles = m_particle_system->getParticles();
-    //#pragma omp parallel default(shared) // Personally I think this is useless... (cannot prevent race condition)
+    //#pragma omp parallel default(shared) num_threads(8)// Personally I think this is useless... (cannot prevent race condition)
     {
-        //#pragma omp for schedule(static)  // Using round-robin scheduling
+        //#pragma omp for schedule(dynamic)  // Using round-robin scheduling
         for (int i = 0; i < particles->m_size; ++i)
         {
             for (int j = i + 1; j < particles->m_size; ++j)

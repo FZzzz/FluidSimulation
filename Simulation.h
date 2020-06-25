@@ -30,6 +30,9 @@ public:
 
 	void Initialize(PBD_MODE mode, std::shared_ptr<ParticleSystem> particle_system);
 	bool Step(float dt);
+
+	bool StepCUDA(float dt);
+
 	void AddCollider(Collider* collider);
 	void AddStaticConstraint(Constraint* constraint);
 	void AddStaticConstraints(std::vector<Constraint*> constraints);

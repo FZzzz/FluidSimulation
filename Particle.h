@@ -4,6 +4,7 @@
 #include <memory>
 #include <vector>
 #include <glm/common.hpp>
+#include <cuda_runtime.h>
 #include "Collider.h"
 
 class Particle;
@@ -36,6 +37,19 @@ public:
 	std::vector<float>		m_density;
 	std::vector<float>		m_C;
 	std::vector<float>		m_lambda;
+
+	float3* m_d_prev_positions;
+	float3* m_d_positions;
+	float3* m_d_predict_positions;
+	float3* m_d_new_positions;
+	float3* m_d_velocity;
+	float3* m_d_force;
+
+	float* m_d_mass;
+	float* m_d_massInv;
+	float* m_d_density;
+	float* m_d_C;
+	float* m_d_lambda;	
 };
 
 

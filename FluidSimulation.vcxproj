@@ -53,6 +53,7 @@
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
   <ImportGroup Label="ExtensionSettings">
+    <Import Project="$(VCTargetsPath)\BuildCustomizations\CUDA 11.0.props" />
   </ImportGroup>
   <ImportGroup Label="Shared">
   </ImportGroup>
@@ -192,6 +193,7 @@
     <ClInclude Include="common.h" />
     <ClInclude Include="Constraints.h" />
     <ClInclude Include="ConstraintSolver.h" />
+    <ClInclude Include="CUDASimulation.cuh" />
     <ClInclude Include="GameObject.h" />
     <ClInclude Include="Jelly.h" />
     <ClInclude Include="Joint.h" />
@@ -218,9 +220,14 @@
     <ClInclude Include="Shader.h" />
     <ClInclude Include="Simulation.h" />
     <ClInclude Include="SPHKernel.h" />
+    <ClInclude Include="CUDASphKernl.cuh" />
     <ClInclude Include="Transform.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <CudaCompile Include="CUDASimulation.cu" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
+    <Import Project="$(VCTargetsPath)\BuildCustomizations\CUDA 11.0.targets" />
   </ImportGroup>
 </Project>

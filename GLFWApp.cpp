@@ -94,6 +94,7 @@ bool GLFWApp::Initialize(int width , int height , const std::string &title)
 	/* ResourceManager Creation */
 	m_resource_manager = std::make_shared<ResourceManager>();
 
+
 	// Initialize asset importer
 	m_importer = std::make_shared<AssetImporter>();
 
@@ -195,6 +196,8 @@ bool GLFWApp::Initialize(int width , int height , const std::string &title)
 	/*
 	 *	UI settings
 	 */
+
+	 /* GUI Initialize */
 	m_gui_manager = std::make_shared<GUIManager>();
 	m_gui_manager->Initialize(m_window);
 	m_gui_manager->AddGUIFunction(std::bind(Frame_Status_GUI));
@@ -240,6 +243,7 @@ void GLFWApp::Run()
 void GLFWApp::ReleaseResources()
 {
 	m_resource_manager->ShutDown();
+	m_particle_system->Release();
 }
 
 void GLFWApp::SignalFail()
@@ -329,13 +333,14 @@ void GLFWApp::Update()
 	float dt = m_currentTime - m_previousTime;
 
 	const float time_step = 0.01f;
-	m_simulator->Step(time_step);
+	m_simulator->StepCUDA(time_step);
 
+	/*
 	for (auto jelly : jellies)
 	{
 		jelly->Update();
 	}
-
+	*/
 	
 	for (auto it = m_resource_manager->getObjects().begin(); 
 		it != m_resource_manager->getObjects().end(); ++it)
@@ -423,7 +428,7 @@ void GLFWApp::GenerateFluidParticles()
 
 	m_particle_system->setParticles(particles);
 	*/
-	m_particle_system->Update();
+	m_particle_system->InitializeCUDA();
 }
 
 /*

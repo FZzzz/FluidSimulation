@@ -325,7 +325,6 @@ void ParticleSet::OnCollision(size_t i, Collider* other, float dt)
 	}
 	}
 
-
 	/* Restitution */
 	m_velocity[i] = 0.99f * m_velocity[i];
 

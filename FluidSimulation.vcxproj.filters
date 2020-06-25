@@ -43,6 +43,9 @@
     <Filter Include="Source Files\Engine\Animation">
       <UniqueIdentifier>{bb4271b3-65b0-480d-95f6-4d32fea12393}</UniqueIdentifier>
     </Filter>
+    <Filter Include="CUDA Files">
+      <UniqueIdentifier>{8eff9b47-22ed-42fd-8747-94ea75ab6bcc}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="main.cpp">
@@ -254,5 +257,16 @@
     <ClInclude Include="NeighborSearch.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="CUDASphKernl.cuh">
+      <Filter>CUDA Files</Filter>
+    </ClInclude>
+    <ClInclude Include="CUDASimulation.cuh">
+      <Filter>CUDA Files</Filter>
+    </ClInclude>
+  </ItemGroup>
+  <ItemGroup>
+    <CudaCompile Include="CUDASimulation.cu">
+      <Filter>CUDA Files</Filter>
+    </CudaCompile>
   </ItemGroup>
 </Project>
