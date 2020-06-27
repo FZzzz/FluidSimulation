@@ -77,6 +77,7 @@ void collide(
     uint* cellStart,
     uint* cellEnd,
     uint   numParticles,
-    uint   numCells);
+    uint   numCells,
+    float dt);
 
 #endif

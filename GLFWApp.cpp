@@ -74,7 +74,7 @@ bool GLFWApp::Initialize(int width , int height , const std::string &title)
 	glfwSetWindowPos(m_window, 100, 100);
 	glfwMakeContextCurrent(m_window);
 	glfwSetKeyCallback(m_window, Key_callback);
-	glfwSwapInterval(0);
+	glfwSwapInterval(1);
 
 	// Initialize glew
 	glewExperimental = true;

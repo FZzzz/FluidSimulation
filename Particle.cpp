@@ -172,7 +172,7 @@ ParticleSet::ParticleSet(size_t n, float particle_mass)
 	m_predict_positions.resize(n, glm::vec3(0, 0, 0));
 	m_new_positions.resize(n, glm::vec3(0, 0, 0));
 	
-	m_velocity.resize(n, glm::vec3(0, 0, 0));
+	m_velocity.resize(n, glm::vec3(30.f, 0, 0));
 	m_force.resize(n, glm::vec3(0, 0, 0));
 
 	m_mass.resize(n, particle_mass);

@@ -48,9 +48,11 @@ float3 collideSpheres(
 
 	float3 force = make_float3(0.0f);
 
+	//printf("dist: %f\ncollideDist: %f", dist, collideDist);
+
 	if (dist < collideDist)
 	{
-		float3 norm = relPos / dist;
+		float3 norm = relPos / (dist+0.00001f);
 
 		// relative velocity
 		float3 relVel = velB - velA;
@@ -66,6 +68,8 @@ float3 collideSpheres(
 		force += params.shear * tanVel;
 		// attraction
 		force += attraction * relPos;
+
+		//printf("%f %f %f\n", force.x, force.y, force.z);
 	}
 
 	return force;
@@ -263,7 +267,7 @@ void reorderDataAndFindCellStart(
 
 void sort_particles(uint* dGridParticleHash, uint* dGridParticleIndex, uint numParticles)
 {
-	printf("uint size: %u\n", sizeof(uint));
+	//printf("uint size: %u\n", sizeof(uint));
 	thrust::sort_by_key(
 		thrust::device_ptr<uint>(dGridParticleHash),
 		thrust::device_ptr<uint>(dGridParticleHash + numParticles),
@@ -298,9 +302,12 @@ void integrate_d(
 	
 	if (index >= numParticles)
 		return;
-
+	/*
+	if (index == 0)
+		printf("particles[0]: %5f, %5f, %5f %5f\n", pos[index].x, pos[index].y, pos[index].z, params.gravity.y);
+	*/
 	t_vel = t_vel + params.gravity * deltaTime;
-	t_vel = params.damping * t_vel;
+	//t_vel = params.damping * t_vel;
 	t_pos = t_pos + t_vel * deltaTime;
 
 	if (t_pos.x > 10.0f - params.particle_radius)
@@ -336,6 +343,10 @@ void integrate_d(
 
 	pos[index] = t_pos;
 	vel[index] = t_vel;
+	/*
+	if (index == 0)
+		printf("After particles[0]: %f, %f, %f\n", pos[index].x, pos[index].y, pos[index].z);
+		*/
 }
 
 // collide a particle against all other particles in a given cell
@@ -350,7 +361,8 @@ void collideD(
 	uint* gridParticleIndex,      // input: sorted particle indices
 	uint* cellStart,
 	uint* cellEnd,
-	uint  numParticles)
+	uint  numParticles,
+	float dt)
 {
 	uint index = __mul24(blockIdx.x, blockDim.x) + threadIdx.x;
 
@@ -380,7 +392,7 @@ void collideD(
 
 	// write new velocity back to original unsorted location
 	uint originalIndex = gridParticleIndex[index];
-	newVel[originalIndex] = vel + force; // + force/mass * dt ?
+	newVel[originalIndex] = vel + force * dt; // + force/mass * dt ?
 }
 
 void allocateArray(void** devPtr, size_t size)
@@ -391,7 +403,7 @@ void allocateArray(void** devPtr, size_t size)
 
 void setParams(SimParams* param_in)
 {
-	cudaMemcpyToSymbol(&params, param_in, sizeof(SimParams));
+	checkCudaErrors(cudaMemcpyToSymbol(params, param_in, sizeof(SimParams)));
 }
 
 void integrate(float3* pos, float3* vel, float deltaTime, uint numParticles)
@@ -414,7 +426,8 @@ void collide(
 	uint*	cellStart,
 	uint*	cellEnd,
 	uint	numParticles,
-	uint	numCells)
+	uint	numCells,
+	float	dt)
 {
 
 	// thread per particle
@@ -429,7 +442,8 @@ void collide(
 		gridParticleIndex,
 		cellStart,
 		cellEnd,
-		numParticles
+		numParticles,
+		dt
 	);
 
 	// check if kernel invocation generated an error

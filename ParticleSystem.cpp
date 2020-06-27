@@ -37,7 +37,7 @@ void ParticleSystem::Update()
 {
 	std::chrono::steady_clock::time_point t1, t2;
 	t1 = std::chrono::high_resolution_clock::now();
-	UpdateParticleGLBUfferData();
+	//UpdateParticleGLBUfferData();
 	t2 = std::chrono::high_resolution_clock::now();
 	m_update_elased_time = (t2 - t1).count() / 1000000.0;
 }
@@ -248,6 +248,32 @@ void ParticleSystem::SetupCUDAMemory()
 		n * sizeof(float),
 		cudaMemcpyHostToDevice
 	);
+
+	cudaMemcpy(
+		(void*)m_particles->m_d_prev_velocity,
+		(void*)velocity,
+		n * sizeof(float3),
+		cudaMemcpyHostToDevice
+	);
+	cudaMemcpy(
+		(void*)m_particles->m_d_new_velocity,
+		(void*)velocity,
+		n * sizeof(float3),
+		cudaMemcpyHostToDevice
+	);
+	cudaMemcpy(
+		(void*)m_particles->m_d_sorted_position,
+		(void*)positions,
+		n * sizeof(float3),
+		cudaMemcpyHostToDevice
+	);
+	cudaMemcpy(
+		(void*)m_particles->m_d_sorted_velocity,
+		(void*)velocity,
+		n * sizeof(float3),
+		cudaMemcpyHostToDevice
+	);
+
 }
 
 void ParticleSystem::RegisterCUDAVBO()
@@ -291,8 +317,9 @@ void ParticleSystem::UpdateParticleGLBUfferData()
 	/*
 	if(m_cuda_vbo_resource)
 		cudaGraphicsUnregisterResource(m_cuda_vbo_resource);
+		*/
 	RegisterCUDAVBO();
-	*/
+	
 	/*
 	if (m_particles.size() <= 0)
 		return;

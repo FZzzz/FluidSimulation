@@ -126,46 +126,44 @@ bool Simulation::StepCUDA(float dt)
 	
 	// Integrate
 	integrate(particles->m_d_positions, particles->m_d_velocity, dt, particles->m_size);
-
-	for (int i = 0; i < 10; ++i)
-	{
-
-		// Neighbor search
-		calculate_hash(
-			m_neighbor_searcher->m_d_grid_particle_hash,
-			m_neighbor_searcher->m_d_grid_particle_index,
-			particles->m_d_positions,
-			particles->m_size
-		);
-		sort_particles(
-			m_neighbor_searcher->m_d_grid_particle_hash,
-			m_neighbor_searcher->m_d_grid_particle_index,
-			particles->m_size
-		);
-		reorderDataAndFindCellStart(
-			m_neighbor_searcher->m_d_cellStart,
-			m_neighbor_searcher->m_d_cellEnd,
-			particles->m_d_sorted_position,
-			particles->m_d_sorted_velocity,
-			m_neighbor_searcher->m_d_grid_particle_hash,
-			m_neighbor_searcher->m_d_grid_particle_index,
-			particles->m_d_prev_positions,
-			particles->m_d_prev_velocity,
-			particles->m_size,
-			m_neighbor_searcher->m_num_grid_cells
-		);
-		// Collide 
-		collide(
-			particles->m_d_new_velocity,
-			particles->m_d_sorted_position,
-			particles->m_d_sorted_velocity,
-			m_neighbor_searcher->m_d_grid_particle_index,
-			m_neighbor_searcher->m_d_cellStart,
-			m_neighbor_searcher->m_d_cellEnd,
-			particles->m_size,
-			m_neighbor_searcher->m_num_grid_cells
-		);
-	}
+	
+	
+	// Neighbor search
+	calculate_hash(
+		m_neighbor_searcher->m_d_grid_particle_hash,
+		m_neighbor_searcher->m_d_grid_particle_index,
+		particles->m_d_positions,
+		particles->m_size
+	);
+	sort_particles(
+		m_neighbor_searcher->m_d_grid_particle_hash,
+		m_neighbor_searcher->m_d_grid_particle_index,
+		particles->m_size
+	);
+	reorderDataAndFindCellStart(
+		m_neighbor_searcher->m_d_cellStart,
+		m_neighbor_searcher->m_d_cellEnd,
+		particles->m_d_sorted_position,
+		particles->m_d_sorted_velocity,
+		m_neighbor_searcher->m_d_grid_particle_hash,
+		m_neighbor_searcher->m_d_grid_particle_index,
+		particles->m_d_positions,
+		particles->m_d_velocity,
+		particles->m_size,
+		m_neighbor_searcher->m_num_grid_cells
+	);
+	// Collide 
+	collide(
+		particles->m_d_velocity,
+		particles->m_d_sorted_position,
+		particles->m_d_sorted_velocity,
+		m_neighbor_searcher->m_d_grid_particle_index,
+		m_neighbor_searcher->m_d_cellStart,
+		m_neighbor_searcher->m_d_cellEnd,
+		particles->m_size,
+		m_neighbor_searcher->m_num_grid_cells,
+		dt
+	);
 	// Fetch Result
 	//cudaMemcpy(positions, particles->m_d_positions, particles->m_size * sizeof(float3), cudaMemcpyDeviceToHost);
 
@@ -240,13 +238,13 @@ void Simulation::setGravity(float gravity)
 void Simulation::SetupSimParams()
 {
 	SimParams* sim_params = new SimParams();
-	sim_params->gravity = make_float3(0.f, 9.81f, 0.f);
-	sim_params->global_damping = 0.87f;
-	sim_params->particle_radius = 1.f;
+	sim_params->gravity = make_float3(0.f, -9.81f, 0.f);
+	sim_params->global_damping = 0.99f;
+	sim_params->particle_radius = 0.1f;
 	sim_params->grid_size = m_neighbor_searcher->m_grid_size;
 	sim_params->num_cells = m_neighbor_searcher->m_num_grid_cells;
 	sim_params->world_origin = make_float3(0, 0, 0);
-	sim_params->cell_size = make_float3(1.f, 1.f, 1.f);
+	sim_params->cell_size = make_float3(0.1f, 0.1f, 0.1f);
 	sim_params->spring = 0.5f;
 	sim_params->damping = 0.02f;
 	sim_params->shear = 0.1f;
