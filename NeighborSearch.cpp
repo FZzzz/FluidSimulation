@@ -1,5 +1,8 @@
-#include "NeighborSearch.h"
 #include <omp.h>
+#include <cuda_runtime.h>
+#include <helper_cuda.h>
+#include <helper_math.h>
+#include "NeighborSearch.h"
 
 #define PRE_ALLOCATE_ENTRY_SIZE 100
 
@@ -9,9 +12,12 @@
  */
 
 
-NeighborSearch::NeighborSearch(std::shared_ptr<ParticleSystem> particle_system):
-    m_particle_system(particle_system), m_grid_spacing(1.f)
+NeighborSearch::NeighborSearch(std::shared_ptr<ParticleSystem> particle_system, uint3 grid_size):
+    m_particle_system(particle_system), 
+    m_grid_spacing(1.f),
+    m_grid_size(grid_size)
 {
+    m_num_grid_cells = m_grid_size.x * m_grid_size.y * m_grid_size.z;
 }
 
 NeighborSearch::~NeighborSearch()
@@ -29,6 +35,48 @@ void NeighborSearch::Initialize()
     */
     const ParticleSet* const particles = m_particle_system->getParticles();
     m_search_cache.resize(particles->m_size, std::vector<size_t>());
+
+}
+
+void NeighborSearch::InitializeCUDA()
+{
+#ifdef _DEBUG
+    assert(m_particle_system != nullptr);
+#endif
+    /*
+    const auto& particles = m_particle_system->getParticles();
+    m_search_cache.resize(particles.size(), std::vector<size_t>());
+    */
+    const ParticleSet* const particles = m_particle_system->getParticles();
+    m_search_cache.resize(particles->m_size, std::vector<size_t>());
+
+    /*Allocate CUDA memory*/
+    //allocateArray((void**) &m_d_grid_particle_hash, particles->m_size * sizeof(uint));
+    //allocateArray((void**)&m_d_grid_particle_index, particles->m_size * sizeof(uint));
+
+    cudaMalloc((void**)&m_d_grid_particle_hash, particles->m_size * sizeof(uint));
+    cudaMalloc((void**)&m_d_grid_particle_index, particles->m_size * sizeof(uint));
+    
+    cudaMalloc((void**)&m_d_cellStart, m_num_grid_cells * sizeof(uint));
+    cudaMalloc((void**)&m_d_cellEnd, m_num_grid_cells * sizeof(uint));
+    /*
+    uint* m_cellStart;
+	uint* m_cellEnd;
+	
+	uint  m_numCells;
+    */
+}
+
+void NeighborSearch::Release()
+{
+    if (m_d_grid_particle_hash)
+        cudaFree(m_d_grid_particle_hash);
+    if (m_d_grid_particle_index)
+        cudaFree(m_d_grid_particle_index);
+    if (m_d_cellStart)
+        cudaFree(m_d_cellStart);
+    if (m_d_cellEnd)
+        cudaFree(m_d_cellEnd);
 }
 
 /*

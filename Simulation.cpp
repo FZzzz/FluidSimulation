@@ -3,11 +3,12 @@
 #include "CollisionDetection.h"
 #include "SPHKernel.h"
 #include <iostream>
-#include "imgui/imgui.h"
+#include <cuda_runtime.h>
+#include <cuda_gl_interop.h>
 #include <omp.h>
 #include <chrono>
-#include "CUDASimulation.cuh"
-#include <cuda_gl_interop.h>
+#include "cuda_simulation.cuh"
+
 
 Simulation::Simulation()
 	: m_solver(nullptr), m_particle_system(nullptr), m_neighbor_searcher(nullptr),
@@ -32,9 +33,12 @@ void Simulation::Initialize(PBD_MODE mode, std::shared_ptr<ParticleSystem> parti
 {
 	m_solver = std::make_shared<ConstraintSolver>(mode);
 	m_particle_system = particle_system;
-	m_neighbor_searcher = std::make_shared<NeighborSearch>(m_particle_system);
-	m_neighbor_searcher->Initialize();
+
+	uint3 grid_size = make_uint3(64, 64, 64);
+	m_neighbor_searcher = std::make_shared<NeighborSearch>(m_particle_system, grid_size);
+	m_neighbor_searcher->InitializeCUDA();
 	m_initialized = true;
+	SetupSimParams();
 }
 
 /*
@@ -117,58 +121,58 @@ bool Simulation::StepCUDA(float dt)
 	// Map vbo to m_d_positinos
 	cudaGraphicsMapResources(1, vbo_resource, 0);
 
-	float3* pos;
 	size_t num_bytes;
 	cudaGraphicsResourceGetMappedPointer((void**)&(particles->m_d_positions), &num_bytes, *vbo_resource);
 	
-	/*
-	// Launch kernels
-	PredictPositions(dt);
+	// Integrate
+	integrate(particles->m_d_positions, particles->m_d_velocity, dt, particles->m_size);
 
-	t1 = std::chrono::high_resolution_clock::now();
-	CollisionDetection(dt);
-	HandleCollisionResponse();
-	GenerateCollisionConstraint();
-
-	t2 = std::chrono::high_resolution_clock::now();
-	FindNeighborParticles(effective_radius);
-
-	t3 = std::chrono::high_resolution_clock::now();
-	if (!m_first_frame)
-		ComputeRestDensity();
-
-	for (uint32_t i = 0; i < m_solver->getSolverIteration(); ++i)
+	for (int i = 0; i < 10; ++i)
 	{
-		ComputeDensity(effective_radius);
-		ComputeLambdas(effective_radius);
-		ComputeSPHParticlesCorrection(effective_radius, dt);
-		UpdatePredictPosition();
+
+		// Neighbor search
+		calculate_hash(
+			m_neighbor_searcher->m_d_grid_particle_hash,
+			m_neighbor_searcher->m_d_grid_particle_index,
+			particles->m_d_positions,
+			particles->m_size
+		);
+		sort_particles(
+			m_neighbor_searcher->m_d_grid_particle_hash,
+			m_neighbor_searcher->m_d_grid_particle_index,
+			particles->m_size
+		);
+		reorderDataAndFindCellStart(
+			m_neighbor_searcher->m_d_cellStart,
+			m_neighbor_searcher->m_d_cellEnd,
+			particles->m_d_sorted_position,
+			particles->m_d_sorted_velocity,
+			m_neighbor_searcher->m_d_grid_particle_hash,
+			m_neighbor_searcher->m_d_grid_particle_index,
+			particles->m_d_prev_positions,
+			particles->m_d_prev_velocity,
+			particles->m_size,
+			m_neighbor_searcher->m_num_grid_cells
+		);
+		// Collide 
+		collide(
+			particles->m_d_new_velocity,
+			particles->m_d_sorted_position,
+			particles->m_d_sorted_velocity,
+			m_neighbor_searcher->m_d_grid_particle_index,
+			m_neighbor_searcher->m_d_cellStart,
+			m_neighbor_searcher->m_d_cellEnd,
+			particles->m_size,
+			m_neighbor_searcher->m_num_grid_cells
+		);
 	}
-	t4 = std::chrono::high_resolution_clock::now();
-
-	if (!ProjectConstraints(dt))
-		return false;
-
-	ApplySolverResults(dt);
-
-	{
-		ImGui::Begin("Performance");
-		ImGui::Text("Collision:\t %.5lf (ms)", (t2 - t1).count() / 1000000.0);
-		ImGui::Text("Searching:\t %.5lf (ms)", (t3 - t2).count() / 1000000.0);
-		ImGui::Text("Correction:\t%.5lf (ms)", (t4 - t3).count() / 1000000.0);
-		ImGui::Text("GL update:\t%.5lf (ms)", m_particle_system->getUpdateTime());
-		ImGui::End();
-	}
-	*/
-	cuda_test_offset(50, 200, particles->m_d_positions);
-
 	// Fetch Result
-	cudaMemcpy(positions, particles->m_d_positions, particles->m_size * sizeof(float3), cudaMemcpyDeviceToHost);
+	//cudaMemcpy(positions, particles->m_d_positions, particles->m_size * sizeof(float3), cudaMemcpyDeviceToHost);
 
 	// Unmap CUDA buffer object
 	cudaGraphicsUnmapResources(1, vbo_resource, 0);
 
-	m_particle_system->Update();
+	//m_particle_system->Update();
 
 	return true;
 }
@@ -231,6 +235,28 @@ void Simulation::Pause()
 void Simulation::setGravity(float gravity)
 {
 	m_world_desc.gravity = gravity;
+}
+
+void Simulation::SetupSimParams()
+{
+	SimParams* sim_params = new SimParams();
+	sim_params->gravity = make_float3(0.f, 9.81f, 0.f);
+	sim_params->global_damping = 0.87f;
+	sim_params->particle_radius = 1.f;
+	sim_params->grid_size = m_neighbor_searcher->m_grid_size;
+	sim_params->num_cells = m_neighbor_searcher->m_num_grid_cells;
+	sim_params->world_origin = make_float3(0, 0, 0);
+	sim_params->cell_size = make_float3(1.f, 1.f, 1.f);
+	sim_params->spring = 0.5f;
+	sim_params->damping = 0.02f;
+	sim_params->shear = 0.1f;
+	sim_params->attraction = 0.0f;
+	sim_params->boundary_damping = -0.5f;
+
+	setParams(sim_params);
+
+	delete sim_params;
+	sim_params = nullptr;
 }
 
 void Simulation::PredictPositions(float dt)

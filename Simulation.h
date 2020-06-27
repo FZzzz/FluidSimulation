@@ -49,6 +49,8 @@ public:
 	inline bool  isPause() { return m_pause; };
 private:
 
+	void SetupSimParams();
+
 	void PredictPositions(float dt);
 	void FindNeighborParticles(float effective_radius);
 	

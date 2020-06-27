@@ -42,8 +42,13 @@ public:
 	float3* m_d_positions;
 	float3* m_d_predict_positions;
 	float3* m_d_new_positions;
+	float3* m_d_prev_velocity;
 	float3* m_d_velocity;
+	float3* m_d_new_velocity;
 	float3* m_d_force;
+
+	float3* m_d_sorted_position;
+	float3* m_d_sorted_velocity;
 
 	float* m_d_mass;
 	float* m_d_massInv;
@@ -52,7 +57,7 @@ public:
 	float* m_d_lambda;	
 };
 
-
+/* deprecated("Using ParticleSet class instead\n") */
 class Particle
 {
 public:

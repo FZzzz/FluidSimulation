@@ -30,7 +30,7 @@ void ParticleSystem::InitializeCUDA()
 	GenerateParticleGLBuffers();
 	SetupCUDAMemory();
 	UpdateParticleGLBUfferData();
-	RegisterCUDAVBO();	
+	RegisterCUDAVBO();
 }
 
 void ParticleSystem::Update()
@@ -50,7 +50,13 @@ void ParticleSystem::Release()
 	cudaFree(m_particles->m_d_positions);
 	cudaFree(m_particles->m_d_predict_positions);
 	cudaFree(m_particles->m_d_new_positions);
+	cudaFree(m_particles->m_d_prev_velocity);
 	cudaFree(m_particles->m_d_velocity);
+	cudaFree(m_particles->m_d_new_velocity);
+
+	cudaFree(m_particles->m_d_sorted_position);
+	cudaFree(m_particles->m_d_sorted_velocity);
+
 	cudaFree(m_particles->m_d_force);
 	cudaFree(m_particles->m_d_mass);
 	cudaFree(m_particles->m_d_massInv);
@@ -124,7 +130,15 @@ void ParticleSystem::SetupCUDAMemory()
 		n * sizeof(float3)
 	);
 	cudaMalloc(
+		(void**)&(m_particles->m_d_prev_velocity),
+		n * sizeof(float3)
+	);
+	cudaMalloc(
 		(void**)&(m_particles->m_d_velocity),
+		n * sizeof(float3)
+	);
+	cudaMalloc(
+		(void**)&(m_particles->m_d_new_velocity),
 		n * sizeof(float3)
 	);
 	cudaMalloc(
@@ -151,6 +165,18 @@ void ParticleSystem::SetupCUDAMemory()
 		(void**)&(m_particles->m_d_lambda),
 		n * sizeof(float)
 	);
+
+
+	cudaMalloc(
+		(void**)&(m_particles->m_d_sorted_position),
+		n * sizeof(float3)
+	);
+	cudaMalloc(
+		(void**)&(m_particles->m_d_sorted_velocity),
+		n * sizeof(float3)
+	);
+
+
 
 	// Set value
 	cudaMemcpy(
@@ -262,8 +288,11 @@ void ParticleSystem::UpdateParticleGLBUfferData()
 	*/
 	glBindVertexArray(0);
 
-	cudaGraphicsUnregisterResource(m_cuda_vbo_resource);
-	cudaGraphicsGLRegisterBuffer(&m_cuda_vbo_resource, m_vbo, cudaGraphicsMapFlagsNone);
+	/*
+	if(m_cuda_vbo_resource)
+		cudaGraphicsUnregisterResource(m_cuda_vbo_resource);
+	RegisterCUDAVBO();
+	*/
 	/*
 	if (m_particles.size() <= 0)
 		return;

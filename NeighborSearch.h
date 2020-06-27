@@ -6,8 +6,11 @@
 #include <unordered_map>
 #include <atomic>
 #include <cstdint>
+#include <cuda_runtime.h>
+#include <helper_math.h>
 #include "common.h"
 #include "ParticleSystem.h"
+
 
 struct HashEntry
 {
@@ -17,14 +20,25 @@ struct HashEntry
 class NeighborSearch
 {
 public:
-	NeighborSearch(std::shared_ptr<ParticleSystem> particle_system);
+	NeighborSearch(std::shared_ptr<ParticleSystem> particle_system, uint3 grid_size);
 	~NeighborSearch();
 
 	void Initialize();
+	void InitializeCUDA();
+
+	void Release();
+
 	void NaiveSearch(float effective_radius);
 	void SpatialSearch(float effective_radius);
 
 	const std::vector<size_t>& FetchNeighbors(size_t i);
+
+	uint3 m_grid_size;
+	uint  m_num_grid_cells;
+	uint* m_d_grid_particle_hash;
+	uint* m_d_grid_particle_index;
+	uint* m_d_cellStart;
+	uint* m_d_cellEnd;
 
 private:
 
@@ -38,7 +52,7 @@ private:
 
 	glm::vec3 m_grid_spacing;
 	std::unordered_map<unsigned int, HashEntry*> m_hashtable;
-
+	
 };
 
 #endif

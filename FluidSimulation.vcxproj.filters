@@ -257,15 +257,15 @@
     <ClInclude Include="NeighborSearch.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="CUDASphKernl.cuh">
+    <ClInclude Include="sph_kernel.cuh">
       <Filter>CUDA Files</Filter>
     </ClInclude>
-    <ClInclude Include="CUDASimulation.cuh">
+    <ClInclude Include="cuda_simulation.cuh">
       <Filter>CUDA Files</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>
-    <CudaCompile Include="CUDASimulation.cu">
+    <CudaCompile Include="cuda_simulation.cu">
       <Filter>CUDA Files</Filter>
     </CudaCompile>
   </ItemGroup>
