@@ -313,7 +313,7 @@ void Simulation::SetupSimParams()
 	sim_params->damping = 0.02f;
 	sim_params->shear = 0.1f;
 	sim_params->attraction = 0.0f;
-	sim_params->boundary_damping = -0.99f;
+	sim_params->boundary_damping = 1.f;
 
 	setParams(sim_params);
 

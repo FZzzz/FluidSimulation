@@ -18,7 +18,7 @@
 namespace cg = cooperative_groups;
 
 // calculate position in uniform grid
-__device__ int3 calcGridPos(float3 p)
+inline __device__ int3 calcGridPos(float3 p)
 {
 	int3 gridPos;
 	gridPos.x = floor((p.x - params.world_origin.x) / params.cell_size.x);
@@ -28,7 +28,7 @@ __device__ int3 calcGridPos(float3 p)
 }
 
 // calculate address in grid from position (clamping to edges)
-__device__ uint calcGridHash(int3 gridPos)
+inline __device__ uint calcGridHash(int3 gridPos)
 {
 	gridPos.x = gridPos.x & (params.grid_size.x - 1);  // wrap grid, assumes size is power of 2
 	gridPos.y = gridPos.y & (params.grid_size.y - 1);
@@ -37,7 +37,7 @@ __device__ uint calcGridHash(int3 gridPos)
 }
 
 // collide two spheres using DEM method
-__device__
+inline __device__
 float3 collideSpheres(
 	float3 posA, float3 posB,
 	float3 velA, float3 velB,
@@ -79,7 +79,7 @@ float3 collideSpheres(
 	return force;
 }
 
-__device__
+inline __device__
 float3 collideCell(
 	int3    gridPos,
 	uint    index,
@@ -352,65 +352,35 @@ void integrate_pbd_d(
 	
 	float3 t_vel = vel[index] + dt * make_float3(0, -9.81f, 0);
 	float3 t_pos = pos[index] + dt * t_vel;
-	//vel[index] = t_vel;
-	//predict_pos[index] = t_pos;
-	//new_pos[index] = t_pos;
-
-	/*boundary*/
-	float3 v_r = t_vel;
-	float3 n;
-	float count = 1.f;
 	
-	if (t_pos.x > 10.0f)
+	if (t_pos.x >= 10.0f)
 	{
-		//t_pos.x = 10.0f;
-		t_vel.x *= params.boundary_damping;
-		//n = make_float3(-1.f, 0.f, 0.f);
-		//v_r += t_vel - 2.f * dot(t_vel, n) * n;
-		//count += 1.f;
+		t_vel.x =  -params.boundary_damping * abs(t_vel.x);
 	}
 
-	if (t_pos.x < -10.0f)
+	if (t_pos.x <= -10.0f)
 	{
-		//t_pos.x = -10.0f;
-		t_vel.x *= params.boundary_damping;
-		//n = make_float3(1.f, 0.f, 0.f);
-		//v_r += t_vel - 2.f * dot(t_vel, n) * n;
-		//count += 1.f;
+		t_vel.x = params.boundary_damping * abs(t_vel.x);
 	}
 
-
-	if (t_pos.z > 1.0f)
+	if (t_pos.z >= 1.0f)
 	{
-		//t_pos.z = 1.0f;
-		t_vel.z *= params.boundary_damping;
-		//n = make_float3(0.f, 0.f, -1.f);
-		//v_r += t_vel - 2.f * dot(t_vel, n) * n;
-		//count += 1.f;
+		t_vel.z = -params.boundary_damping * abs(t_vel.z);
 	}
 
-	if (t_pos.z < -15.0f)
+	if (t_pos.z <= -15.0f)
 	{
-		//t_pos.z = -15.0f;
-		t_vel.z *= params.boundary_damping;
-		//n = make_float3(0.f, 0.f, 1.f);
-		//v_r += t_vel - 2.f * dot(t_vel, n) * n;
-		//count += 1.f;
+		t_vel.z = params.boundary_damping * abs(t_vel.z);
 	}
 	
-	if (t_pos.y < 0.f)
+	if (t_pos.y <= 0.f)
 	{
-		//t_pos.y = 0.f;
-		t_vel.y *= params.boundary_damping;
-		//n = make_float3(0.f, 1.f, 0.f);
-		//v_r += t_vel - 2.f * dot(t_vel, n) * n;
-		//count += 1.f;
+		t_vel.y = params.boundary_damping * abs(t_vel.y);
 	}
 
-	v_r /= count;
-	if (length(t_vel) >= 30.f)
+	if (length(t_vel) > 10.f)
 	{
-		t_vel = t_vel * 10.f / length(t_vel);
+		t_vel = (10.f / length(t_vel)) * t_vel ;
 	}
 	vel[index] = t_vel;
 	predict_pos[index] = pos[index] + dt * t_vel;
@@ -464,7 +434,7 @@ void collideD(
 	newVel[originalIndex] = vel + force * dt; // + force/mass * dt ?
 }
 
-__device__
+inline __device__
 float pbf_density(
 	int3    grid_pos,
 	uint    index,
@@ -506,7 +476,7 @@ float pbf_density(
 	return density;
 }
 
-__device__
+inline __device__
 float pbf_lambda(
 	int3    grid_pos,
 	uint    index,
@@ -532,8 +502,6 @@ float pbf_lambda(
 		{
 			if (j != index)                // check not colliding with self
 			{
-				uint original_index = gridParticleIndex[j];
-
 				float3 pos2 = sorted_pos[j];
 				float3 vec = pos - pos2;
 				float dist = length(vec);
@@ -549,7 +517,7 @@ float pbf_lambda(
 	return gradientC_sum;
 }
 
-__device__
+inline __device__
 float3 pbf_correction(
 	int3    grid_pos,
 	uint    index,
@@ -1037,10 +1005,10 @@ void solve_sph_fluid(
 	t5 = std::chrono::high_resolution_clock::now();
 	{
 		ImGui::Begin("CUDA Performance");
-		ImGui::Text("Density:\t %.5lf (ms)", (t2 - t1).count() / 1000000.0);
-		ImGui::Text("Lambda:\t %.5lf (ms)", (t3 - t2).count() / 1000000.0);
-		ImGui::Text("Correction:\t%.5lf (ms)", (t4 - t3).count() / 1000000.0);
-		ImGui::Text("Finalize:\t%.5lf (ms)", (t5 - t4).count() / 1000000.0);
+		ImGui::Text("Density:     %.5lf (ms)", (t2 - t1).count() / 1000000.0f);
+		ImGui::Text("Lambda:      %.5lf (ms)", (t3 - t2).count() / 1000000.0f);
+		ImGui::Text("Correction:  %.5lf (ms)", (t4 - t3).count() / 1000000.0f);
+		ImGui::Text("Finalize:    %.5lf (ms)", (t5 - t4).count() / 1000000.0f);
 		ImGui::End();
 	}
 
