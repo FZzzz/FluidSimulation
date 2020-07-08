@@ -304,7 +304,7 @@ void Simulation::SetupSimParams()
 	SimParams* sim_params = new SimParams();
 	sim_params->gravity = make_float3(0.f, -9.81f, 0.f);
 	sim_params->global_damping = 0.99f;
-	sim_params->particle_radius = 1.f;
+	sim_params->particle_radius = 1.0f;
 	sim_params->grid_size = m_neighbor_searcher->m_grid_size;
 	sim_params->num_cells = m_neighbor_searcher->m_num_grid_cells;
 	sim_params->world_origin = make_float3(0, 0, 0);

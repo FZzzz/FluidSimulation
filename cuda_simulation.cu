@@ -12,6 +12,8 @@
 #include <cooperative_groups.h>
 #include "cuda_simulation.cuh"
 #include "sph_kernel.cuh"
+#include <chrono>
+#include "imgui/imgui.h"
 
 namespace cg = cooperative_groups;
 
@@ -981,11 +983,13 @@ void solve_sph_fluid(
 	uint	numCells,
 	float	dt)
 {
+	std::chrono::steady_clock::time_point t1, t2, t3, t4, t5;
 	uint numThreads, numBlocks;
 	compute_grid_size(numParticles, MAX_THREAD_NUM, numBlocks, numThreads);
 
 	// CUDA SPH Kernel
 	// compute density
+	t1 = std::chrono::high_resolution_clock::now();
 	compute_density_d <<<numBlocks, numThreads>>>(
 		density, rest_density,
 		sorted_pos,
@@ -995,7 +999,7 @@ void solve_sph_fluid(
 		cellEnd,
 		numParticles
 	);
-
+	t2 = std::chrono::high_resolution_clock::now();
 	// compute lambda
 	compute_lambdas_d <<<numBlocks, numThreads >>>(
 		lambda,
@@ -1007,7 +1011,7 @@ void solve_sph_fluid(
 		cellEnd,
 		numParticles
 	);
-
+	t3 = std::chrono::high_resolution_clock::now();
 	// compute new position
 	compute_position_correction << <numBlocks, numThreads >> > (
 		lambda,
@@ -1023,14 +1027,22 @@ void solve_sph_fluid(
 	
 	// correct this iteration
 	//apply_correction << <numBlocks, numThreads >> > (new_pos, predict_pos, numParticles);
-
+	t4 = std::chrono::high_resolution_clock::now();
 	// final correction
 	finalize_correction << <numBlocks, numThreads >> > (
 		pos, new_pos, predict_pos, vel, 
 		numParticles, 
 		dt
 	);
-	
+	t5 = std::chrono::high_resolution_clock::now();
+	{
+		ImGui::Begin("CUDA Performance");
+		ImGui::Text("Density:\t %.5lf (ms)", (t2 - t1).count() / 1000000.0);
+		ImGui::Text("Lambda:\t %.5lf (ms)", (t3 - t2).count() / 1000000.0);
+		ImGui::Text("Correction:\t%.5lf (ms)", (t4 - t3).count() / 1000000.0);
+		ImGui::Text("Finalize:\t%.5lf (ms)", (t5 - t4).count() / 1000000.0);
+		ImGui::End();
+	}
 
 }
 
