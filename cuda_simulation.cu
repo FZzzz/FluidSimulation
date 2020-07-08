@@ -354,52 +354,64 @@ void integrate_pbd_d(
 	//predict_pos[index] = t_pos;
 	//new_pos[index] = t_pos;
 
+	/*boundary*/
 	float3 v_r = t_vel;
 	float3 n;
-
+	float count = 1.f;
+	
 	if (t_pos.x > 10.0f)
 	{
-		t_pos.x = 10.0f;
-		//t_vel.x *= params.boundary_damping;
-		n = make_float3(-1.f, 0.f, 0.f);
-		v_r = t_vel - 2.f * dot(t_vel, n) * n;
+		//t_pos.x = 10.0f;
+		t_vel.x *= params.boundary_damping;
+		//n = make_float3(-1.f, 0.f, 0.f);
+		//v_r += t_vel - 2.f * dot(t_vel, n) * n;
+		//count += 1.f;
 	}
 
 	if (t_pos.x < -10.0f)
 	{
-		t_pos.x = -10.0f;
-		//t_vel.x *= params.boundary_damping;
-		n = make_float3(1.f, 0.f, 0.f);
-		v_r = t_vel - 2.f * dot(t_vel, n) * n;
+		//t_pos.x = -10.0f;
+		t_vel.x *= params.boundary_damping;
+		//n = make_float3(1.f, 0.f, 0.f);
+		//v_r += t_vel - 2.f * dot(t_vel, n) * n;
+		//count += 1.f;
 	}
 
 
 	if (t_pos.z > 1.0f)
 	{
-		t_pos.z = 1.0f;
-		//t_vel.z *= params.boundary_damping;
-		n = make_float3(0.f, 0.f, -1.f);
-		v_r = t_vel - 2.f * dot(t_vel, n) * n;
+		//t_pos.z = 1.0f;
+		t_vel.z *= params.boundary_damping;
+		//n = make_float3(0.f, 0.f, -1.f);
+		//v_r += t_vel - 2.f * dot(t_vel, n) * n;
+		//count += 1.f;
 	}
 
 	if (t_pos.z < -15.0f)
 	{
-		t_pos.z = -15.0f;
-		//t_vel.z *= params.boundary_damping;
-		n = make_float3(0.f, 0.f, 1.f);
-		v_r = t_vel - 2.f * dot(t_vel, n) * n;
+		//t_pos.z = -15.0f;
+		t_vel.z *= params.boundary_damping;
+		//n = make_float3(0.f, 0.f, 1.f);
+		//v_r += t_vel - 2.f * dot(t_vel, n) * n;
+		//count += 1.f;
 	}
-
+	
 	if (t_pos.y < 0.f)
 	{
-		t_pos.y = 0.f;
-		//t_vel.y *= params.boundary_damping;
-		n = make_float3(0.f, 1.f, 0.f);
-		v_r = t_vel - 2.f * dot(t_vel, n) * n;
+		//t_pos.y = 0.f;
+		t_vel.y *= params.boundary_damping;
+		//n = make_float3(0.f, 1.f, 0.f);
+		//v_r += t_vel - 2.f * dot(t_vel, n) * n;
+		//count += 1.f;
 	}
 
-	vel[index] = params.boundary_damping * v_r;
-	predict_pos[index] = pos[index] + dt * v_r;
+	v_r /= count;
+	if (length(t_vel) >= 30.f)
+	{
+		t_vel = t_vel * 10.f / length(t_vel);
+	}
+	vel[index] = t_vel;
+	predict_pos[index] = pos[index] + dt * t_vel;
 	new_pos[index] = predict_pos[index];
 
 
@@ -578,7 +590,7 @@ float3 pbf_correction(
 				x = pow(x, 4);
 				scorr = scorr * x * dt;
 				
-				float3 res = (1.f / (*rest_density)) *
+				float3 res = //(1.f / (*rest_density)) *
 					(lambda_i + lambda[original_index] + scorr) *
 					gradient;
 				
@@ -718,8 +730,8 @@ void compute_lambdas_d(
 	// get address in grid
 	int3 gridPos = calcGridPos(pos);
 
-	const float epislon = 1.f;
-	float3 gradientC_i = -(1.f / (*rest_density)) *
+	const float epislon = 0.000001f;
+	float3 gradientC_i = (1.f / (*rest_density)) *
 		Poly6_W_Gradient_CUDA(make_float3(0, 0, 0), 0, params.particle_radius);
 	float gradientC_sum = dot(gradientC_i, gradientC_i);
 	// traverse 27 neighbors
@@ -742,7 +754,7 @@ void compute_lambdas_d(
 	}
 
 	//printf("gradientC_sum: %f\n", gradientC_sum);
-	lambda[originalIndex] /= gradientC_sum;// +epislon;
+	lambda[originalIndex] /= gradientC_sum + epislon;
 
 	//lambda[originalIndex] = lambda_res;
 }
@@ -796,9 +808,9 @@ void compute_position_correction(
 			}
 		}
 	}
-
+	correction = (1.f / (*rest_density)) * correction;
 	//compute new position
-	new_pos[originalIndex] += correction;
+	new_pos[originalIndex] = pos + correction;
 }
 
 __global__

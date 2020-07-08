@@ -308,12 +308,12 @@ void Simulation::SetupSimParams()
 	sim_params->grid_size = m_neighbor_searcher->m_grid_size;
 	sim_params->num_cells = m_neighbor_searcher->m_num_grid_cells;
 	sim_params->world_origin = make_float3(0, 0, 0);
-	sim_params->cell_size = make_float3(1.f, 1.f, 1.f);
+	sim_params->cell_size = make_float3(sim_params->particle_radius);
 	sim_params->spring = 0.5f;
 	sim_params->damping = 0.02f;
 	sim_params->shear = 0.1f;
 	sim_params->attraction = 0.0f;
-	sim_params->boundary_damping = 0.99f;
+	sim_params->boundary_damping = -0.99f;
 
 	setParams(sim_params);
 
