@@ -11,10 +11,23 @@ The solver I used here is a Jaccobian-fasion solver, which allows us to compute 
 In near future, the simulation will be computed by GPU by exloiting the architechture of shared memory and higher degree of parallelization. 
 
 ## Result 
+
+**OpenMP**
+
 ![](https://i.imgur.com/bjFUgTD.png)
 
 10k fluid particles, 8 threads, 2 solver iterations
+
 20 fps in average
+
+**CUDA**
+
+![](https://imgur.com/JtqN0VY.gif) 
+
+10k fluid particles,
+
+90 fps in average
+
 
 ## Analyzation by Intel VTune Profiler
 ![](https://i.imgur.com/WNTyFkv.png)
