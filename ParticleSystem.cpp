@@ -37,7 +37,15 @@ void ParticleSystem::Update()
 {
 	std::chrono::steady_clock::time_point t1, t2;
 	t1 = std::chrono::high_resolution_clock::now();
-	//UpdateParticleGLBUfferData();
+	UpdateParticleGLBUfferData();
+	t2 = std::chrono::high_resolution_clock::now();
+	m_update_elased_time = (t2 - t1).count() / 1000000.0;
+}
+
+void ParticleSystem::UpdateCUDA()
+{
+	std::chrono::steady_clock::time_point t1, t2;
+	t1 = std::chrono::high_resolution_clock::now();
 	t2 = std::chrono::high_resolution_clock::now();
 	m_update_elased_time = (t2 - t1).count() / 1000000.0;
 }
@@ -70,10 +78,12 @@ void ParticleSystem::Release()
 ParticleSet* ParticleSystem::AllocateParticles(size_t n, float particle_mass)
 {
 	m_particles = new ParticleSet(n, particle_mass);
+	/*
 	for (GLuint i = 0; i < m_particles->m_size; ++i)
 	{
 		m_particle_indices.push_back(i);
 	}
+	*/
 	return m_particles;
 }
 
@@ -92,7 +102,7 @@ void ParticleSystem::setParticles(std::vector<std::shared_ptr<Particle>> particl
 
 void ParticleSystem::SetupCUDAMemory()
 {
-	glm::vec3* prev_positions = m_particles->m_prev_positions.data();
+	//glm::vec3* prev_positions = m_particles->m_prev_positions.data();
 	glm::vec3* positions = m_particles->m_positions.data();
 	glm::vec3* predict_positions = m_particles->m_predict_positions.data();
 	glm::vec3* new_positions = m_particles->m_new_positions.data();
@@ -109,10 +119,13 @@ void ParticleSystem::SetupCUDAMemory()
 	size_t n = m_particles->m_size;
 
 	// Allocate memory space
+	
+	/*
 	cudaMalloc(
 		(void**)&(m_particles->m_d_prev_positions), 
 		n * sizeof(float3)
 	);
+	*/
 	
 	/*
 	cudaMalloc(
@@ -176,15 +189,15 @@ void ParticleSystem::SetupCUDAMemory()
 		n * sizeof(float3)
 	);
 
-
-
 	// Set value
+	/*
 	cudaMemcpy(
 		(void*)m_particles->m_d_prev_positions,
 		(void*)prev_positions,
 		n * sizeof(float3),
 		cudaMemcpyHostToDevice
 	);
+	*/
 	/*
 	cudaMemcpy(
 		(void*)m_particles->m_d_positions,
@@ -261,6 +274,8 @@ void ParticleSystem::SetupCUDAMemory()
 		n * sizeof(float3),
 		cudaMemcpyHostToDevice
 	);
+
+	/*
 	cudaMemcpy(
 		(void*)m_particles->m_d_sorted_position,
 		(void*)positions,
@@ -273,6 +288,7 @@ void ParticleSystem::SetupCUDAMemory()
 		n * sizeof(float3),
 		cudaMemcpyHostToDevice
 	);
+	*/
 
 }
 

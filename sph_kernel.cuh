@@ -16,9 +16,9 @@ __device__ float Poly6_W_CUDA(float distance, float effective_radius)
 		double q = h2 - d2;
 		double q3 = q * q * q;
 
-		float result = (float)(315.0 / (64.0 * CUDART_PI * h9)) * q3;
+		double result = (315.0 / (64.0 * CUDART_PI * h9)) * q3;
 
-		return (result);
+		return (float)(result);
 	}
 	else
 	{
@@ -52,7 +52,7 @@ __device__ float3 Poly6_W_Gradient_CUDA(float3 diff, float distance, float effec
 }
 
 
-__device__ float Spiky_W(float distance, float effective_radius)
+__device__ float Spiky_W_CUDA(float distance, float effective_radius)
 {
 	if (distance >= 0 && distance <= effective_radius)
 	{
@@ -74,7 +74,7 @@ __device__ float Spiky_W(float distance, float effective_radius)
 }
 
 
-__device__ float3 Spiky_W_Gradient(float3 diff, float distance, float effective_radius)
+__device__ float3 Spiky_W_Gradient_CUDA(float3 diff, float distance, float effective_radius)
 {
 	if (distance >= 0 && distance <= effective_radius)
 	{

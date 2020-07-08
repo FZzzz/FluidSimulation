@@ -75,6 +75,7 @@ private:
 	bool m_pause;
 
 	float m_rest_density;
+	float* m_d_rest_density;
 
 	std::shared_ptr<ConstraintSolver> m_solver;
 	std::shared_ptr<ParticleSystem> m_particle_system;

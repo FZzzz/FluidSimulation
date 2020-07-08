@@ -74,7 +74,7 @@ bool GLFWApp::Initialize(int width , int height , const std::string &title)
 	glfwSetWindowPos(m_window, 100, 100);
 	glfwMakeContextCurrent(m_window);
 	glfwSetKeyCallback(m_window, Key_callback);
-	glfwSwapInterval(1);
+	glfwSwapInterval(0);
 
 	// Initialize glew
 	glewExperimental = true;
@@ -137,7 +137,7 @@ bool GLFWApp::Initialize(int width , int height , const std::string &title)
 		camera_desc.screen_height = f_height;
 		camera_desc.near_plane = 0.001f;
 		camera_desc.far_plane = 1000.0f;
-		camera_desc.position = glm::vec3(0.0f, 20.0f, 60.0f);
+		camera_desc.position = glm::vec3(0.0f, 10.0f, 50.0f);
 		camera_desc.target_position = glm::vec3(0, camera_desc.position.y, 0);
 		camera_desc.projection = glm::perspective(camera_desc.fov, f_width / f_height, 0.1f, 1000.0f);
 		camera_desc.lookAt = glm::lookAt(camera_desc.position, camera_desc.target_position, glm::vec3(0.0f, 1.0f, 0.0f));
@@ -333,15 +333,11 @@ void GLFWApp::Update()
 	float dt = m_currentTime - m_previousTime;
 
 	const float time_step = 0.01f;
+#ifdef _USE_CUDA_
 	m_simulator->StepCUDA(time_step);
-
-	/*
-	for (auto jelly : jellies)
-	{
-		jelly->Update();
-	}
-	*/
-	
+#else
+	m_simulator->Step(time_step);
+#endif
 	for (auto it = m_resource_manager->getObjects().begin(); 
 		it != m_resource_manager->getObjects().end(); ++it)
 	{
@@ -352,10 +348,6 @@ void GLFWApp::Update()
 
 	// GUI update
 	m_gui_manager->Update();
-	/*
-	if(!m_simulator->isPause())
-		m_simulator->Pause();
-		*/
 }
 
 void GLFWApp::SetUpImGui()
@@ -381,7 +373,6 @@ void GLFWApp::GenerateRadomParticles()
 		particles.push_back(particle);
 	}
 
-	//m_particle_system->setParticles(particles);
 	m_particle_system->Update();
 }
 
@@ -401,34 +392,18 @@ void GLFWApp::GenerateFluidParticles()
 				x = 0.f + 0.5f * static_cast<float>(i);
 				y = 12.5f + 0.5f * static_cast<float>(j);
 				z = -10.f + 0.5f * static_cast<float>(k);
-				particles->m_positions[idx] = glm::vec3(x, y, z);
-				particles->m_new_positions[idx] = particles->m_positions[idx];
-				particles->m_predict_positions[idx] = particles->m_positions[idx];
+				glm::vec3 pos(x, y, z);
+				particles->m_positions[idx] = pos;
+				particles->m_new_positions[idx] = pos;
+				particles->m_predict_positions[idx] = pos;
 			}
 		}
 	}
-
-	/*
-	std::vector<Particle_Ptr> particles;
-
-	for (int i = 0; i < 10; ++i)
-	{
-		for (int j = 0; j < 10; ++j)
-		{
-			for (int k = 0; k < 10; ++k)
-			{
-				x = -9.9f + 0.6f * static_cast<float>(i);
-				y = 12.5f + 0.6f * static_cast<float>(j);
-				z = -14.9f + 0.6f * static_cast<float>(k);
-				auto particle = std::make_shared<Particle>(glm::vec3(x, y, z), 0.1f);
-				particles.push_back(particle);
-			}
-		}
-	}
-
-	m_particle_system->setParticles(particles);
-	*/
+#ifdef _USE_CUDA_
 	m_particle_system->InitializeCUDA();
+#else
+	m_particle_system->Initialize();
+#endif
 }
 
 /*

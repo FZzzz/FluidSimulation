@@ -6,7 +6,7 @@ Particle::Particle(glm::vec3 pos, float m):
 	m_position(pos),
 	m_velocity(glm::vec3(0)),
 	m_force(glm::vec3(0)),
-	m_prev_position(glm::vec3(0)),
+	//m_prev_position(glm::vec3(0)),
 	m_new_position(glm::vec3(0)),
 	m_mass(m),
 	m_massInv(1.f / m_mass), 
@@ -25,7 +25,7 @@ Particle::~Particle()
 
 void Particle::Update(float dt)
 {
-	m_prev_position = m_position;
+	//m_prev_position = m_position;
 	
 	m_force = m_new_force;
 	
@@ -167,12 +167,12 @@ void Particle::OnCollision(Collider* other, const float& dt)
 ParticleSet::ParticleSet(size_t n, float particle_mass)
 	: m_size(n)
 {
-	m_prev_positions.resize(n, glm::vec3(0,0,0));
+	//m_prev_positions.resize(n, glm::vec3(0,0,0));
 	m_positions.resize(n, glm::vec3(0, 0, 0));
 	m_predict_positions.resize(n, glm::vec3(0, 0, 0));
 	m_new_positions.resize(n, glm::vec3(0, 0, 0));
 	
-	m_velocity.resize(n, glm::vec3(30.f, 0, 0));
+	m_velocity.resize(n, glm::vec3(0.f, 0, 0.f));
 	m_force.resize(n, glm::vec3(0, 0, 0));
 
 	m_mass.resize(n, particle_mass);
@@ -184,9 +184,8 @@ ParticleSet::ParticleSet(size_t n, float particle_mass)
 
 ParticleSet::~ParticleSet()
 {
-	m_prev_positions.clear();
+	//m_prev_positions.clear();
 	m_positions.clear();
-	m_prev_positions.clear();
 	m_new_positions.clear();
 	m_new_positions.clear();
 
@@ -204,7 +203,7 @@ void ParticleSet::Update(float dt)
 {
 	for (size_t i = 0; i < m_size; ++i)
 	{
-		m_prev_positions[i] = m_positions[i];
+		//m_prev_positions[i] = m_positions[i];
 		m_velocity[i] = (m_new_positions[i] - m_positions[i]) / dt;
 		m_positions[i] = m_new_positions[i];
 	}
@@ -297,7 +296,7 @@ void ParticleSet::OnCollision(size_t i, Collider* other, float dt)
 			if (min_dist < diff2min[i])
 				min_dist = diff2min[i], normal = normal_preset[3 + i];
 		}
-		glm::vec3 tmp = glm::dot(m_velocity[i], normal) * normal;
+		//glm::vec3 tmp = glm::dot(m_velocity[i], normal) * normal;
 
 		v_r = m_velocity[i] - 2.f * glm::dot(m_velocity[i], normal) * normal;
 		m_velocity[i] = v_r;

@@ -18,6 +18,7 @@ public:
 	void Initialize();
 	void InitializeCUDA();
 	void Update();
+	void UpdateCUDA();
 	void Release();
 
 	ParticleSet* AllocateParticles(size_t n, float particle_mass);

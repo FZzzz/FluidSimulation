@@ -2,6 +2,7 @@
 #include <cstdlib>
 #include <helper_cuda.h>
 #include <helper_functions.h>
+#include <device_atomic_functions.h>
 #include <helper_math.h>
 #include <stdio.h>
 #include <thrust/device_ptr.h>
@@ -10,6 +11,7 @@
 #include <thrust/sort.h>
 #include <cooperative_groups.h>
 #include "cuda_simulation.cuh"
+#include "sph_kernel.cuh"
 
 namespace cg = cooperative_groups;
 
@@ -265,18 +267,6 @@ void reorderDataAndFindCellStart(
 
 }
 
-void sort_particles(uint* dGridParticleHash, uint* dGridParticleIndex, uint numParticles)
-{
-	//printf("uint size: %u\n", sizeof(uint));
-	thrust::sort_by_key(
-		thrust::device_ptr<uint>(dGridParticleHash),
-		thrust::device_ptr<uint>(dGridParticleHash + numParticles),
-		thrust::device_ptr<uint>(dGridParticleIndex)
-	);
-}
-
-
-
 __global__ void test_offset(float3* positions)
 {
 	int i = blockIdx.x * blockDim.x + threadIdx.x;
@@ -349,9 +339,73 @@ void integrate_d(
 		*/
 }
 
+__global__ 
+void integrate_pbd_d(
+	float3* pos, float3* vel, float3* force, float* massInv,
+	float3* predict_pos, float3* new_pos,
+	float dt,
+	uint numParticles)
+{
+	uint index = __mul24(blockIdx.x, blockDim.x) + threadIdx.x;
+	
+	float3 t_vel = vel[index] + dt * make_float3(0, -9.81f, 0);
+	float3 t_pos = pos[index] + dt * t_vel;
+	//vel[index] = t_vel;
+	//predict_pos[index] = t_pos;
+	//new_pos[index] = t_pos;
+
+	float3 v_r = t_vel;
+	float3 n;
+
+	if (t_pos.x > 10.0f)
+	{
+		t_pos.x = 10.0f;
+		//t_vel.x *= params.boundary_damping;
+		n = make_float3(-1.f, 0.f, 0.f);
+		v_r = t_vel - 2.f * dot(t_vel, n) * n;
+	}
+
+	if (t_pos.x < -10.0f)
+	{
+		t_pos.x = -10.0f;
+		//t_vel.x *= params.boundary_damping;
+		n = make_float3(1.f, 0.f, 0.f);
+		v_r = t_vel - 2.f * dot(t_vel, n) * n;
+	}
+
+
+	if (t_pos.z > 1.0f)
+	{
+		t_pos.z = 1.0f;
+		//t_vel.z *= params.boundary_damping;
+		n = make_float3(0.f, 0.f, -1.f);
+		v_r = t_vel - 2.f * dot(t_vel, n) * n;
+	}
+
+	if (t_pos.z < -15.0f)
+	{
+		t_pos.z = -15.0f;
+		//t_vel.z *= params.boundary_damping;
+		n = make_float3(0.f, 0.f, 1.f);
+		v_r = t_vel - 2.f * dot(t_vel, n) * n;
+	}
+
+	if (t_pos.y < 0.f)
+	{
+		t_pos.y = 0.f;
+		//t_vel.y *= params.boundary_damping;
+		n = make_float3(0.f, 1.f, 0.f);
+		v_r = t_vel - 2.f * dot(t_vel, n) * n;
+	}
+
+	vel[index] = params.boundary_damping * v_r;
+	predict_pos[index] = pos[index] + dt * v_r;
+	new_pos[index] = predict_pos[index];
+
+
+}
+
 // collide a particle against all other particles in a given cell
-
-
 /* Collision device code */
 __global__
 void collideD(
@@ -378,6 +432,7 @@ void collideD(
 	// examine neighbouring cells
 	float3 force = make_float3(0.0f);
 
+	// traverse 27 neighbors
 	for (int z = -1; z <= 1; z++)
 	{
 		for (int y = -1; y <= 1; y++)
@@ -395,11 +450,405 @@ void collideD(
 	newVel[originalIndex] = vel + force * dt; // + force/mass * dt ?
 }
 
+__device__
+float pbf_density(
+	int3    grid_pos,
+	uint    index,
+	float3  pos,
+	float3* sorted_pos,
+	float*	mass,
+	uint*	cell_start,
+	uint*	cell_end,
+	uint*	gridParticleIndex)
+{
+	uint grid_hash = calcGridHash(grid_pos);
+
+	// get start of bucket for this cell
+	uint start_index = cell_start[grid_hash];
+	float density = 0.0f;
+
+	if (start_index != 0xffffffff)          // cell is not empty
+	{
+		// iterate over particles in this cell
+		uint end_index = cell_end[grid_hash];
+
+		for (uint j = start_index; j < end_index; j++)
+		{
+			if (j != index)                // check not colliding with self
+			{
+				uint original_index = gridParticleIndex[j];
+				
+				float3 pos2 = sorted_pos[j];
+				float3 vec = pos - pos2;
+				float dist = length(vec);
+				
+				float rho = mass[original_index] * Poly6_W_CUDA(dist, params.particle_radius);
+
+				density += rho;
+			}
+		}
+	}
+
+	return density;
+}
+
+__device__
+float pbf_lambda(
+	int3    grid_pos,
+	uint    index,
+	float3  pos,
+	float*	rest_density,
+	float3* sorted_pos,
+	uint*	cell_start,
+	uint*	cell_end,
+	uint*	gridParticleIndex)
+{
+	uint grid_hash = calcGridHash(grid_pos);
+
+	// get start of bucket for this cell
+	uint start_index = cell_start[grid_hash];
+	float gradientC_sum = 0.f;
+
+	if (start_index != 0xffffffff)          // cell is not empty
+	{
+		// iterate over particles in this cell
+		uint end_index = cell_end[grid_hash];
+
+		for (uint j = start_index; j < end_index; j++)
+		{
+			if (j != index)                // check not colliding with self
+			{
+				uint original_index = gridParticleIndex[j];
+
+				float3 pos2 = sorted_pos[j];
+				float3 vec = pos - pos2;
+				float dist = length(vec);
+
+				float3 gradientC_j = (1.f / (*rest_density)) *
+					Poly6_W_Gradient_CUDA(vec, dist, params.particle_radius);
+
+				float dot_val = dot(gradientC_j, gradientC_j);
+				gradientC_sum += dot_val;
+			}
+		}
+	}
+	return gradientC_sum;
+}
+
+__device__
+float3 pbf_correction(
+	int3    grid_pos,
+	uint    index,
+	float3  pos,
+	float	lambda_i,
+	float*	rest_density,
+	float3* sorted_pos,
+	float*	lambda,
+	uint*	cell_start,
+	uint*	cell_end,
+	uint*	gridParticleIndex,
+	float	dt)
+{
+	uint grid_hash = calcGridHash(grid_pos);
+
+	// get start of bucket for this cell
+	uint start_index = cell_start[grid_hash];
+	float3 correction = make_float3(0, 0, 0);
+
+	if (start_index != 0xffffffff)          // cell is not empty
+	{
+		// iterate over particles in this cell
+		uint end_index = cell_end[grid_hash];
+
+		for (uint j = start_index; j < end_index; j++)
+		{
+			if (j != index)                // check not colliding with self
+			{
+				uint original_index = gridParticleIndex[j];
+
+				float3 pos2 = sorted_pos[j];
+				float3 vec = pos - pos2;
+				float dist = length(vec);
+
+				float3 gradient = Poly6_W_Gradient_CUDA(vec, dist, params.particle_radius);
+				
+				float scorr = -0.1f;
+				float x = Poly6_W_CUDA(dist, params.particle_radius) / 
+					Poly6_W_CUDA(0.3f * params.particle_radius, params.particle_radius);
+				x = pow(x, 4);
+				scorr = scorr * x * dt;
+				
+				float3 res = (1.f / (*rest_density)) *
+					(lambda_i + lambda[original_index] + scorr) *
+					gradient;
+				
+				correction += res;
+			}
+		}
+	}
+	return correction;
+}
+
+__global__
+void compute_rest_density_d(
+	float*	rest_density,			// output: rest density
+	float3* sorted_pos,				// input: sorted mass
+	float*	mass,					// input: mass
+	uint*	gridParticleIndex,		// input: sorted particle indices
+	uint*	cellStart,
+	uint*	cellEnd,
+	uint	numParticles
+)
+{
+	uint index = __mul24(blockIdx.x, blockDim.x) + threadIdx.x;
+
+	if (index >= numParticles) return;
+
+	uint originalIndex = gridParticleIndex[index];
+
+	// read particle data from sorted arrays
+	float3 pos = sorted_pos[index];
+
+	// initial density
+	float rho = mass[originalIndex] * Poly6_W_CUDA(0, params.particle_radius);
+
+	// get address in grid
+	int3 gridPos = calcGridPos(pos);
+
+	// traverse 27 neighbors
+	for (int z = -1; z <= 1; z++)
+	{
+		for (int y = -1; y <= 1; y++)
+		{
+			for (int x = -1; x <= 1; x++)
+			{
+				int3 neighbor_pos = gridPos + make_int3(x, y, z);
+				rho += pbf_density(
+					neighbor_pos, index,
+					pos, sorted_pos, mass,
+					cellStart, cellEnd, gridParticleIndex
+				);
+			}
+		}
+	}
+
+	//printf("rho[%u]: %f", index, rho);
+
+	atomicAdd(rest_density, rho/(float)numParticles);
+
+}
+
+__global__
+void compute_density_d(
+	float*	density,					// output: computed density
+	float*	rest_density,				// input: rest density
+	float3* sorted_pos,					// input: sorted mass
+	float*	mass,						// input: mass
+	float*	C,							// input: contraint
+	uint*	gridParticleIndex,			// input: sorted particle indices
+	uint*	cellStart,
+	uint*	cellEnd,
+	uint	numParticles
+	)
+{
+	uint index = __mul24(blockIdx.x, blockDim.x) + threadIdx.x;
+	
+	if (index >= numParticles) return;
+
+	uint originalIndex = gridParticleIndex[index];
+
+	// read particle data from sorted arrays
+	float3 pos = sorted_pos[index];
+	
+	// initial density
+	float rho = mass[originalIndex] * Poly6_W_CUDA(0, params.particle_radius);
+
+	// get address in grid
+	int3 gridPos = calcGridPos(pos);
+
+	// traverse 27 neighbors
+	for (int z = -1; z <= 1; z++)
+	{
+		for (int y = -1; y <= 1; y++)
+		{
+			for (int x = -1; x <= 1; x++)
+			{
+				int3 neighbor_pos = gridPos + make_int3(x, y, z);
+				rho += pbf_density(
+					neighbor_pos, index, 
+					pos, sorted_pos, mass, 
+					cellStart, cellEnd, gridParticleIndex
+				);
+			}
+		}
+	}
+
+	// Update date density and constraint value
+	density[originalIndex] = rho;
+	C[originalIndex] = (rho / (*rest_density)) - 1.f;
+
+	//printf("C[%u]: %f\n", originalIndex, C[originalIndex]);
+
+}
+
+__global__
+void compute_lambdas_d(
+	float*	lambda,						// output: computed density
+	float*	rest_density,				// input: rest density
+	float3* sorted_pos,					// input: sorted mass
+	float*	C,							// input: contraint
+	uint*	gridParticleIndex,			// input: sorted particle indices
+	uint*	cellStart,
+	uint*	cellEnd,
+	uint	numParticles
+)
+{
+	uint index = __mul24(blockIdx.x, blockDim.x) + threadIdx.x;
+
+	if (index >= numParticles) return;
+
+	uint originalIndex = gridParticleIndex[index];
+
+	// read particle data from sorted arrays
+	float3 pos = sorted_pos[index];
+
+	// initial density
+	lambda[originalIndex] = -C[originalIndex];
+
+	// get address in grid
+	int3 gridPos = calcGridPos(pos);
+
+	const float epislon = 1.f;
+	float3 gradientC_i = -(1.f / (*rest_density)) *
+		Poly6_W_Gradient_CUDA(make_float3(0, 0, 0), 0, params.particle_radius);
+	float gradientC_sum = dot(gradientC_i, gradientC_i);
+	// traverse 27 neighbors
+	for (int z = -1; z <= 1; z++)
+	{
+		for (int y = -1; y <= 1; y++)
+		{
+			for (int x = -1; x <= 1; x++)
+			{
+				int3 neighbor_pos = gridPos + make_int3(x, y, z);
+				float res = pbf_lambda(
+					neighbor_pos, index,
+					pos, rest_density,
+					sorted_pos,
+					cellStart, cellEnd, gridParticleIndex
+				);
+				gradientC_sum += res;
+			}
+		}
+	}
+
+	//printf("gradientC_sum: %f\n", gradientC_sum);
+	lambda[originalIndex] /= gradientC_sum;// +epislon;
+
+	//lambda[originalIndex] = lambda_res;
+}
+
+__global__
+void compute_position_correction(
+	float*	lambda,						// output: computed density
+	float*	rest_density,				// input: rest density
+	float3* sorted_pos,					// input: sorted mass
+	float3* new_pos,					// output: new_pos
+	uint*	gridParticleIndex,			// input: sorted particle indices
+	uint*	cellStart,
+	uint*	cellEnd,
+	uint	numParticles,
+	float	dt
+)
+{
+	uint index = __mul24(blockIdx.x, blockDim.x) + threadIdx.x;
+
+	if (index >= numParticles) return;
+
+	uint originalIndex = gridParticleIndex[index];
+
+	// read particle data from sorted arrays
+	float3 pos = sorted_pos[index];
+
+	// initial density
+	float lambda_i = lambda[originalIndex];
+
+	// get address in grid
+	int3 gridPos = calcGridPos(pos);
+
+	float3 correction = make_float3(0, 0, 0);
+
+
+	// traverse 27 neighbors
+	for (int z = -1; z <= 1; z++)
+	{
+		for (int y = -1; y <= 1; y++)
+		{
+			for (int x = -1; x <= 1; x++)
+			{
+				int3 neighbor_pos = gridPos + make_int3(x, y, z);
+				correction += pbf_correction(
+					neighbor_pos, index,
+					pos, lambda_i, rest_density,
+					sorted_pos, lambda,
+					cellStart, cellEnd, gridParticleIndex,
+					dt
+				);
+			}
+		}
+	}
+
+	//compute new position
+	new_pos[originalIndex] += correction;
+}
+
+__global__
+void apply_correction(
+	float3* new_pos,
+	float3* predict_pos,
+	uint numParticles
+)
+{
+	uint index = __mul24(blockIdx.x, blockDim.x) + threadIdx.x;
+
+	if (index >= numParticles) return;
+	
+	predict_pos[index] = new_pos[index];	
+}
+
+
+__global__
+void finalize_correction(
+	float3* pos,
+	float3* new_pos,
+	float3* predict_pos,
+	float3* velocity,
+	uint numParticles,
+	float dt
+) 
+{
+	uint index = __mul24(blockIdx.x, blockDim.x) + threadIdx.x;
+
+	if (index >= numParticles) return;
+
+	//float3 res = new_pos[index];
+	//float3 vel = (res - pos[index]) / dt;
+
+	float3 t_pos = new_pos[index];
+	float3 t_vel = (t_pos - pos[index]) / dt;
+	
+	
+
+	velocity[index] = t_vel;
+	predict_pos[index] = t_pos;
+	pos[index] = t_pos;
+
+
+}
+
 void allocateArray(void** devPtr, size_t size)
 {
 	checkCudaErrors(cudaMalloc(devPtr, size));
 }
-
 
 void setParams(SimParams* param_in)
 {
@@ -418,7 +867,37 @@ void integrate(float3* pos, float3* vel, float deltaTime, uint numParticles)
 		);
 }
 
-void collide(
+/* Integration for Position based Dynamics */
+void integratePBD(
+	float3* pos, float3* vel,  
+	float3* force, float* massInv,
+	float3* predict_pos, float3* new_pos,
+	float deltaTime,
+	uint numParticles
+)
+{
+	uint numThreads, numBlocks;
+	compute_grid_size(numParticles, MAX_THREAD_NUM, numBlocks, numThreads);
+
+	integrate_pbd_d << <numBlocks, numThreads >> > (
+		pos, vel, force, massInv,
+		predict_pos, new_pos,
+		deltaTime,
+		numParticles
+		);
+}
+
+void sort_particles(uint* dGridParticleHash, uint* dGridParticleIndex, uint numParticles)
+{
+	//printf("uint size: %u\n", sizeof(uint));
+	thrust::sort_by_key(
+		thrust::device_ptr<uint>(dGridParticleHash),
+		thrust::device_ptr<uint>(dGridParticleHash + numParticles),
+		thrust::device_ptr<uint>(dGridParticleIndex)
+	);
+}
+
+void solve_dem_collision(
 	float3* newVel,
 	float3* sortedPos,
 	float3* sortedVel,
@@ -448,6 +927,98 @@ void collide(
 
 	// check if kernel invocation generated an error
 	getLastCudaError("Kernel execution failed");
+
+}
+
+void compute_rest_density(
+	float* rest_density,			// output: rest density
+	float3* sorted_pos,				// input: sorted mass
+	float* mass,					// input: mass
+	uint* gridParticleIndex,		// input: sorted particle indices
+	uint* cellStart,
+	uint* cellEnd,
+	uint  numParticles
+)
+{
+	uint numThreads, numBlocks;
+	compute_grid_size(numParticles, MAX_THREAD_NUM, numBlocks, numThreads);
+	compute_rest_density_d << <numBlocks, numThreads >> > (
+		rest_density,							// output
+		sorted_pos, mass,						// input particle information
+		gridParticleIndex, cellStart, cellEnd,	// input cell info
+		numParticles		
+		);
+}
+
+void solve_sph_fluid(
+	float3* pos,
+	float3* new_pos,
+	float3* predict_pos,
+	float3* vel,
+	float3* sorted_pos,
+	float3* sorted_vel,
+	float*	mass,
+	float*	density,
+	float*	rest_density,
+	float*	C,
+	float*	lambda,
+	uint*	gridParticleIndex,
+	uint*	cellStart,
+	uint*	cellEnd,
+	uint	numParticles,
+	uint	numCells,
+	float	dt)
+{
+	uint numThreads, numBlocks;
+	compute_grid_size(numParticles, MAX_THREAD_NUM, numBlocks, numThreads);
+
+	// CUDA SPH Kernel
+	// compute density
+	compute_density_d <<<numBlocks, numThreads>>>(
+		density, rest_density,
+		sorted_pos,
+		mass, C,
+		gridParticleIndex,
+		cellStart,
+		cellEnd,
+		numParticles
+	);
+
+	// compute lambda
+	compute_lambdas_d <<<numBlocks, numThreads >>>(
+		lambda,
+		rest_density,
+		sorted_pos,
+		C,
+		gridParticleIndex,
+		cellStart,
+		cellEnd,
+		numParticles
+	);
+
+	// compute new position
+	compute_position_correction << <numBlocks, numThreads >> > (
+		lambda,
+		rest_density,
+		sorted_pos,
+		new_pos,
+		gridParticleIndex,
+		cellStart,
+		cellEnd,
+		numParticles,
+		dt
+	);
+	
+	// correct this iteration
+	//apply_correction << <numBlocks, numThreads >> > (new_pos, predict_pos, numParticles);
+
+	// final correction
+	finalize_correction << <numBlocks, numThreads >> > (
+		pos, new_pos, predict_pos, vel, 
+		numParticles, 
+		dt
+	);
+	
 
 }
 

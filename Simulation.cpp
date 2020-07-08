@@ -12,7 +12,7 @@
 
 Simulation::Simulation()
 	: m_solver(nullptr), m_particle_system(nullptr), m_neighbor_searcher(nullptr),
-	m_initialized(false), m_world_desc(SimWorldDesc(-9.8f, 0.f)), m_pause(false),
+	m_initialized(false), m_world_desc(SimWorldDesc(-9.8f, 0.f)), m_pause(true),
 	m_first_frame(true),
 	m_rest_density(0.8f)
 {
@@ -39,6 +39,12 @@ void Simulation::Initialize(PBD_MODE mode, std::shared_ptr<ParticleSystem> parti
 	m_neighbor_searcher->InitializeCUDA();
 	m_initialized = true;
 	SetupSimParams();
+
+#ifdef _USE_CUDA_
+	cudaMalloc((void**)&m_d_rest_density, sizeof(float));
+#endif
+
+
 }
 
 /*
@@ -70,7 +76,10 @@ bool Simulation::Step(float dt)
 
 	t3 = std::chrono::high_resolution_clock::now();
 	if (m_first_frame)
+	{
 		ComputeRestDensity();
+		std::cout << "Rest density: " << m_rest_density << std::endl;
+	}
 	
 	//m_rest_density = 10.f / 12.f;
 
@@ -100,6 +109,8 @@ bool Simulation::Step(float dt)
 	size_t glm_size = sizeof(glm::vec3);
 	size_t cu_size = sizeof(float3);
 
+	m_pause = true;
+
 	return true;
 }
 
@@ -117,6 +128,7 @@ bool Simulation::StepCUDA(float dt)
 	ParticleSet* particles = m_particle_system->getParticles();
 	cudaGraphicsResource** vbo_resource = m_particle_system->getCUDAGraphicsResource();
 	glm::vec3* positions = particles->m_positions.data();
+	unsigned int numParticles = particles->m_size;
 
 	// Map vbo to m_d_positinos
 	cudaGraphicsMapResources(1, vbo_resource, 0);
@@ -125,20 +137,29 @@ bool Simulation::StepCUDA(float dt)
 	cudaGraphicsResourceGetMappedPointer((void**)&(particles->m_d_positions), &num_bytes, *vbo_resource);
 	
 	// Integrate
-	integrate(particles->m_d_positions, particles->m_d_velocity, dt, particles->m_size);
+	//integrate(particles->m_d_positions, particles->m_d_velocity, dt, particles->m_size);
 	
+	integratePBD(
+		particles->m_d_positions, particles->m_d_velocity,
+		particles->m_d_force, particles->m_d_massInv,
+		particles->m_d_predict_positions, particles->m_d_new_positions,
+		dt,
+		numParticles
+		);
 	
+		
 	// Neighbor search
 	calculate_hash(
 		m_neighbor_searcher->m_d_grid_particle_hash,
 		m_neighbor_searcher->m_d_grid_particle_index,
-		particles->m_d_positions,
-		particles->m_size
+		//particles->m_d_positions,
+		particles->m_d_predict_positions,
+		numParticles
 	);
 	sort_particles(
 		m_neighbor_searcher->m_d_grid_particle_hash,
 		m_neighbor_searcher->m_d_grid_particle_index,
-		particles->m_size
+		numParticles
 	);
 	reorderDataAndFindCellStart(
 		m_neighbor_searcher->m_d_cellStart,
@@ -147,30 +168,73 @@ bool Simulation::StepCUDA(float dt)
 		particles->m_d_sorted_velocity,
 		m_neighbor_searcher->m_d_grid_particle_hash,
 		m_neighbor_searcher->m_d_grid_particle_index,
-		particles->m_d_positions,
+		//particles->m_d_positions,
+		particles->m_d_predict_positions,
 		particles->m_d_velocity,
-		particles->m_size,
+		numParticles,
 		m_neighbor_searcher->m_num_grid_cells
 	);
-	// Collide 
-	collide(
+	
+
+	if (m_first_frame)
+	{
+		compute_rest_density(
+			m_d_rest_density,
+			particles->m_d_sorted_position,
+			particles->m_d_mass,
+			m_neighbor_searcher->m_d_grid_particle_index,
+			m_neighbor_searcher->m_d_cellStart,
+			m_neighbor_searcher->m_d_cellEnd,
+			numParticles
+		);
+
+		//cudaThreadSynchronize();
+
+		cudaMemcpy(&m_rest_density, m_d_rest_density, sizeof(float), cudaMemcpyDeviceToHost);
+		std::cout << "Rest density: " << m_rest_density << std::endl;
+
+		m_first_frame = false;
+	}
+	/*
+	// Solve dem particles collision
+	solve_dem_collision(
 		particles->m_d_velocity,
 		particles->m_d_sorted_position,
 		particles->m_d_sorted_velocity,
 		m_neighbor_searcher->m_d_grid_particle_index,
 		m_neighbor_searcher->m_d_cellStart,
 		m_neighbor_searcher->m_d_cellEnd,
-		particles->m_size,
+		numParticles,
 		m_neighbor_searcher->m_num_grid_cells,
 		dt
 	);
-	// Fetch Result
-	//cudaMemcpy(positions, particles->m_d_positions, particles->m_size * sizeof(float3), cudaMemcpyDeviceToHost);
+	*/
+	
 
+	solve_sph_fluid(
+		particles->m_d_positions,
+		particles->m_d_new_positions, 
+		particles->m_d_predict_positions,
+		particles->m_d_velocity,
+		particles->m_d_sorted_position, particles->m_d_sorted_velocity,
+		particles->m_d_mass,
+		particles->m_d_density, m_d_rest_density,
+		particles->m_d_C,
+		particles->m_d_lambda,
+		m_neighbor_searcher->m_d_grid_particle_index,
+		m_neighbor_searcher->m_d_cellStart,
+		m_neighbor_searcher->m_d_cellEnd,
+		numParticles,
+		m_neighbor_searcher->m_num_grid_cells,
+		dt
+	);
+	
+	
 	// Unmap CUDA buffer object
 	cudaGraphicsUnmapResources(1, vbo_resource, 0);
 
 	//m_particle_system->Update();
+	//m_pause = true;
 
 	return true;
 }
@@ -240,16 +304,16 @@ void Simulation::SetupSimParams()
 	SimParams* sim_params = new SimParams();
 	sim_params->gravity = make_float3(0.f, -9.81f, 0.f);
 	sim_params->global_damping = 0.99f;
-	sim_params->particle_radius = 0.1f;
+	sim_params->particle_radius = 1.f;
 	sim_params->grid_size = m_neighbor_searcher->m_grid_size;
 	sim_params->num_cells = m_neighbor_searcher->m_num_grid_cells;
 	sim_params->world_origin = make_float3(0, 0, 0);
-	sim_params->cell_size = make_float3(0.1f, 0.1f, 0.1f);
+	sim_params->cell_size = make_float3(1.f, 1.f, 1.f);
 	sim_params->spring = 0.5f;
 	sim_params->damping = 0.02f;
 	sim_params->shear = 0.1f;
 	sim_params->attraction = 0.0f;
-	sim_params->boundary_damping = -0.5f;
+	sim_params->boundary_damping = 0.99f;
 
 	setParams(sim_params);
 
@@ -315,6 +379,7 @@ void Simulation::ComputeDensity(float effective_radius)
 				particles->m_density[i] += particles->m_mass[neighbors[j]] * res;
 			}
 			particles->m_C[i] = particles->m_density[i] / m_rest_density - 1.f;
+			std::cout << "C: " << particles->m_C[i] << std::endl;
 		}
 	}
 
@@ -335,8 +400,8 @@ void Simulation::ComputeLambdas(float effective_radius)
 
 			// Reset Lagragian multiplier
 			particles->m_lambda[i] = -particles->m_C[i];
-			glm::vec3 gradientC_i = glm::vec3(0, 0, 0);
-			float gradientC_sum = 0.f;
+			glm::vec3 gradientC_i = (1.f / m_rest_density) * SPHKernel::Poly6_W_Gradient(glm::vec3(0), 0, effective_radius);
+			float gradientC_sum = glm::dot(gradientC_i, gradientC_i);
 
 			for (int j = 0; j < neighbors.size(); ++j)
 			{
@@ -347,11 +412,12 @@ void Simulation::ComputeLambdas(float effective_radius)
 
 				float dot_value = glm::dot(gradientC_j, gradientC_j);
 
-				gradientC_i += gradientC_j;
+				//gradientC_i += gradientC_j;
 				gradientC_sum += dot_value;
 			}
-			float dot_value = glm::dot(gradientC_i, gradientC_i);
-			gradientC_sum += dot_value;
+			std::cout << "gradientC_sum: " << gradientC_sum << std::endl;
+			//float dot_value = glm::dot(gradientC_i, gradientC_i);
+			//gradientC_sum += dot_value;
 			particles->m_lambda[i] /= gradientC_sum + epsilon;
 		}
 	}
