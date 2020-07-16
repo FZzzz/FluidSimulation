@@ -353,12 +353,12 @@ void integrate_pbd_d(
 	float3 t_vel = vel[index] + dt * make_float3(0, -9.81f, 0);
 	float3 t_pos = pos[index] + dt * t_vel;
 	
-	if (t_pos.x >= 10.0f)
+	if (t_pos.x >= 1.0f)
 	{
 		t_vel.x =  -params.boundary_damping * abs(t_vel.x);
 	}
 
-	if (t_pos.x <= -10.0f)
+	if (t_pos.x <= -1.0f)
 	{
 		t_vel.x = params.boundary_damping * abs(t_vel.x);
 	}
@@ -368,7 +368,7 @@ void integrate_pbd_d(
 		t_vel.z = -params.boundary_damping * abs(t_vel.z);
 	}
 
-	if (t_pos.z <= -15.0f)
+	if (t_pos.z <= -1.0f)
 	{
 		t_vel.z = params.boundary_damping * abs(t_vel.z);
 	}
@@ -377,11 +377,13 @@ void integrate_pbd_d(
 	{
 		t_vel.y = params.boundary_damping * abs(t_vel.y);
 	}
-
-	if (length(t_vel) > 10.f)
+	/*
+	if (length(t_vel) > 5.f)
 	{
-		t_vel = (10.f / length(t_vel)) * t_vel ;
+		t_vel = (5.f / length(t_vel)) * t_vel ;
 	}
+	*/
+	
 	vel[index] = t_vel;
 	predict_pos[index] = pos[index] + dt * t_vel;
 	new_pos[index] = predict_pos[index];
@@ -466,7 +468,7 @@ float pbf_density(
 				float3 vec = pos - pos2;
 				float dist = length(vec);
 				
-				float rho = mass[original_index] * Poly6_W_CUDA(dist, params.particle_radius);
+				float rho = mass[original_index] * Poly6_W_CUDA(dist, params.effective_radius);
 
 				density += rho;
 			}
@@ -507,7 +509,7 @@ float pbf_lambda(
 				float dist = length(vec);
 
 				float3 gradientC_j = (1.f / (*rest_density)) *
-					Poly6_W_Gradient_CUDA(vec, dist, params.particle_radius);
+					Spiky_W_Gradient_CUDA(vec, dist, params.effective_radius);
 
 				float dot_val = dot(gradientC_j, gradientC_j);
 				gradientC_sum += dot_val;
@@ -552,21 +554,25 @@ float3 pbf_correction(
 				float3 vec = pos - pos2;
 				float dist = length(vec);
 
-				float3 gradient = Poly6_W_Gradient_CUDA(vec, dist, params.particle_radius);
+				float3 gradient = Spiky_W_Gradient_CUDA(vec, dist, params.effective_radius);
 				
 				float scorr = -0.1f;
-				float x = Poly6_W_CUDA(dist, params.particle_radius) / 
-					Poly6_W_CUDA(0.3f * params.particle_radius, params.particle_radius);
+				float x = Poly6_W_CUDA(dist, params.effective_radius) / 
+					Poly6_W_CUDA(0.3f * params.effective_radius, params.effective_radius);
 				x = pow(x, 4);
-				scorr = scorr * x * dt;
+				scorr = scorr * x * dt * dt;
 				
+				//printf("scorr: %f\n", scorr);
+
 				float3 res = //(1.f / (*rest_density)) *
-					(lambda_i + lambda[original_index] + scorr) *
+					(lambda_i + lambda[original_index])*// +scorr)*
 					gradient;
 				
 				correction += res;
 			}
 		}
+
+		//printf("Num neighbors: %u\n", end_index - start_index);
 	}
 	return correction;
 }
@@ -592,7 +598,7 @@ void compute_rest_density_d(
 	float3 pos = sorted_pos[index];
 
 	// initial density
-	float rho = mass[originalIndex] * Poly6_W_CUDA(0, params.particle_radius);
+	float rho = mass[originalIndex] * Poly6_W_CUDA(0, params.effective_radius);
 
 	// get address in grid
 	int3 gridPos = calcGridPos(pos);
@@ -643,7 +649,7 @@ void compute_density_d(
 	float3 pos = sorted_pos[index];
 	
 	// initial density
-	float rho = mass[originalIndex] * Poly6_W_CUDA(0, params.particle_radius);
+	float rho = mass[originalIndex] * Poly6_W_CUDA(0, params.effective_radius);
 
 	// get address in grid
 	int3 gridPos = calcGridPos(pos);
@@ -669,6 +675,7 @@ void compute_density_d(
 	density[originalIndex] = rho;
 	C[originalIndex] = (rho / (*rest_density)) - 1.f;
 
+	//printf("rho = %f\n", rho);
 	//printf("C[%u]: %f\n", originalIndex, C[originalIndex]);
 
 }
@@ -700,9 +707,10 @@ void compute_lambdas_d(
 	// get address in grid
 	int3 gridPos = calcGridPos(pos);
 
-	const float epislon = 0.000001f;
-	float3 gradientC_i = (1.f / (*rest_density)) *
-		Poly6_W_Gradient_CUDA(make_float3(0, 0, 0), 0, params.particle_radius);
+	const float epislon = 0.001f;
+	float3 gradientC_i = make_float3(0);
+		//-(1.f / (*rest_density)) *
+		//Poly6_W_Gradient_CUDA(make_float3(0, 0, 0), 0, params.effective_radius);
 	float gradientC_sum = dot(gradientC_i, gradientC_i);
 	// traverse 27 neighbors
 	for (int z = -1; z <= 1; z++)
@@ -821,7 +829,7 @@ void finalize_correction(
 	
 
 	velocity[index] = t_vel;
-	predict_pos[index] = t_pos;
+	//predict_pos[index] = t_pos;
 	pos[index] = t_pos;
 
 
@@ -955,47 +963,51 @@ void solve_sph_fluid(
 	uint numThreads, numBlocks;
 	compute_grid_size(numParticles, MAX_THREAD_NUM, numBlocks, numThreads);
 
-	// CUDA SPH Kernel
-	// compute density
-	t1 = std::chrono::high_resolution_clock::now();
-	compute_density_d <<<numBlocks, numThreads>>>(
-		density, rest_density,
-		sorted_pos,
-		mass, C,
-		gridParticleIndex,
-		cellStart,
-		cellEnd,
-		numParticles
-	);
-	t2 = std::chrono::high_resolution_clock::now();
-	// compute lambda
-	compute_lambdas_d <<<numBlocks, numThreads >>>(
-		lambda,
-		rest_density,
-		sorted_pos,
-		C,
-		gridParticleIndex,
-		cellStart,
-		cellEnd,
-		numParticles
-	);
-	t3 = std::chrono::high_resolution_clock::now();
-	// compute new position
-	compute_position_correction << <numBlocks, numThreads >> > (
-		lambda,
-		rest_density,
-		sorted_pos,
-		new_pos,
-		gridParticleIndex,
-		cellStart,
-		cellEnd,
-		numParticles,
-		dt
-	);
-	
-	// correct this iteration
-	//apply_correction << <numBlocks, numThreads >> > (new_pos, predict_pos, numParticles);
-	t4 = std::chrono::high_resolution_clock::now();
+	for (int i = 0; i < 1; ++i)
+	{
+		// CUDA SPH Kernel
+		// compute density
+		t1 = std::chrono::high_resolution_clock::now();
+		compute_density_d << <numBlocks, numThreads >> > (
+			density, rest_density,
+			sorted_pos,
+			mass, C,
+			gridParticleIndex,
+			cellStart,
+			cellEnd,
+			numParticles
+			);
+		t2 = std::chrono::high_resolution_clock::now();
+		// compute lambda
+		compute_lambdas_d << <numBlocks, numThreads >> > (
+			lambda,
+			rest_density,
+			sorted_pos,
+			C,
+			gridParticleIndex,
+			cellStart,
+			cellEnd,
+			numParticles
+			);
+		t3 = std::chrono::high_resolution_clock::now();
+		// compute new position
+		compute_position_correction << <numBlocks, numThreads >> > (
+			lambda,
+			rest_density,
+			sorted_pos,
+			new_pos,
+			gridParticleIndex,
+			cellStart,
+			cellEnd,
+			numParticles,
+			dt
+			);
+
+		// correct this iteration
+		apply_correction << <numBlocks, numThreads >> > (new_pos, predict_pos, numParticles);
+
+		t4 = std::chrono::high_resolution_clock::now();
+	}
 	// final correction
 	finalize_correction << <numBlocks, numThreads >> > (
 		pos, new_pos, predict_pos, vel, 

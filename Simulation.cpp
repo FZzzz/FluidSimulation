@@ -31,17 +31,22 @@ Simulation::~Simulation()
 
 void Simulation::Initialize(PBD_MODE mode, std::shared_ptr<ParticleSystem> particle_system)
 {
-	m_solver = std::make_shared<ConstraintSolver>(mode);
 	m_particle_system = particle_system;
-
+	
 	uint3 grid_size = make_uint3(64, 64, 64);
+	
 	m_neighbor_searcher = std::make_shared<NeighborSearch>(m_particle_system, grid_size);
+	m_solver = std::make_shared<ConstraintSolver>(mode);
+
+	SetupSimParams();
+	GenerateFluidCube();
+		
 	m_neighbor_searcher->InitializeCUDA();
 	m_initialized = true;
-	SetupSimParams();
-
+	
 #ifdef _USE_CUDA_
 	cudaMalloc((void**)&m_d_rest_density, sizeof(float));
+	cudaMemcpy((void*)m_d_rest_density, (void*)&m_rest_density, sizeof(float), cudaMemcpyHostToDevice);
 #endif
 
 
@@ -75,11 +80,13 @@ bool Simulation::Step(float dt)
 	FindNeighborParticles(effective_radius);
 
 	t3 = std::chrono::high_resolution_clock::now();
+	
 	if (m_first_frame)
 	{
 		ComputeRestDensity();
 		std::cout << "Rest density: " << m_rest_density << std::endl;
 	}
+	
 	
 	//m_rest_density = 10.f / 12.f;
 
@@ -109,7 +116,7 @@ bool Simulation::Step(float dt)
 	size_t glm_size = sizeof(glm::vec3);
 	size_t cu_size = sizeof(float3);
 
-	m_pause = true;
+	//m_pause = true;
 
 	return true;
 }
@@ -139,6 +146,7 @@ bool Simulation::StepCUDA(float dt)
 	// Integrate
 	//integrate(particles->m_d_positions, particles->m_d_velocity, dt, particles->m_size);
 	
+	t1 = std::chrono::high_resolution_clock::now();
 	integratePBD(
 		particles->m_d_positions, particles->m_d_velocity,
 		particles->m_d_force, particles->m_d_massInv,
@@ -147,7 +155,7 @@ bool Simulation::StepCUDA(float dt)
 		numParticles
 		);
 	
-		
+	t2 = std::chrono::high_resolution_clock::now();
 	// Neighbor search
 	calculate_hash(
 		m_neighbor_searcher->m_d_grid_particle_hash,
@@ -174,10 +182,11 @@ bool Simulation::StepCUDA(float dt)
 		numParticles,
 		m_neighbor_searcher->m_num_grid_cells
 	);
-	
+	t3 = std::chrono::high_resolution_clock::now();
 
 	if (m_first_frame)
 	{
+		/*
 		compute_rest_density(
 			m_d_rest_density,
 			particles->m_d_sorted_position,
@@ -187,10 +196,11 @@ bool Simulation::StepCUDA(float dt)
 			m_neighbor_searcher->m_d_cellEnd,
 			numParticles
 		);
-
 		//cudaThreadSynchronize();
 
 		cudaMemcpy(&m_rest_density, m_d_rest_density, sizeof(float), cudaMemcpyDeviceToHost);
+		*/
+		//cudaMemcpy((void*)m_d_rest_density, &m_rest_density, sizeof(float), cudaMemcpyHostToDevice);
 		std::cout << "Rest density: " << m_rest_density << std::endl;
 
 		m_first_frame = false;
@@ -210,7 +220,6 @@ bool Simulation::StepCUDA(float dt)
 	);
 	*/
 	
-
 	solve_sph_fluid(
 		particles->m_d_positions,
 		particles->m_d_new_positions, 
@@ -229,6 +238,15 @@ bool Simulation::StepCUDA(float dt)
 		dt
 	);
 	
+	t4 = std::chrono::high_resolution_clock::now();
+
+	{
+		ImGui::Begin("CUDA Performance");
+		ImGui::Text("Integrate:   %.5lf (ms)", (t2 - t1).count() / 1000000.0f);
+		ImGui::Text("Search:      %.5lf (ms)", (t3 - t2).count() / 1000000.0f);
+		//ImGui::Text("Solve:       %.5lf (ms)", (t4 - t2).count() / 1000000.0f);
+		ImGui::End();
+	}
 	
 	// Unmap CUDA buffer object
 	cudaGraphicsUnmapResources(1, vbo_resource, 0);
@@ -301,24 +319,88 @@ void Simulation::setGravity(float gravity)
 
 void Simulation::SetupSimParams()
 {
-	SimParams* sim_params = new SimParams();
-	sim_params->gravity = make_float3(0.f, -9.81f, 0.f);
-	sim_params->global_damping = 0.99f;
-	sim_params->particle_radius = 1.0f;
-	sim_params->grid_size = m_neighbor_searcher->m_grid_size;
-	sim_params->num_cells = m_neighbor_searcher->m_num_grid_cells;
-	sim_params->world_origin = make_float3(0, 0, 0);
-	sim_params->cell_size = make_float3(sim_params->particle_radius);
-	sim_params->spring = 0.5f;
-	sim_params->damping = 0.02f;
-	sim_params->shear = 0.1f;
-	sim_params->attraction = 0.0f;
-	sim_params->boundary_damping = 1.f;
+	const size_t n_particles = 1000;
+	const float particle_mass = 0.05f;
+	const float n_kernel_particles = 20.f;	
+	// water density = 1000 kg/m^3
+	m_rest_density = 1000.f; 
+	m_particle_mass = particle_mass;
 
-	setParams(sim_params);
+	float effective_radius, particle_radius;
+	
+	/* Compute parameters from mass and n_particles*/
+	m_volume = n_kernel_particles * particle_mass / m_rest_density;
+	effective_radius = powf(((3.0f * m_volume) / (4.0f * M_PI)), 1.0f / 3.0f);
+	particle_radius = powf((M_PI / (6.0f * n_kernel_particles)), 1.0f / 3.0f) * effective_radius;
 
-	delete sim_params;
-	sim_params = nullptr;
+	std::cout << "Particle mass: " << particle_mass << std::endl;
+	std::cout << "Effective radius: " << effective_radius << std::endl;
+	std::cout << "Particle radius: " << particle_radius << std::endl;
+
+	m_sim_params = new SimParams();
+	m_sim_params->gravity = make_float3(0.f, -9.81f, 0.f);
+	m_sim_params->global_damping = 0.99f;
+	m_sim_params->particle_radius = particle_radius;
+	m_sim_params->effective_radius = effective_radius;
+	m_sim_params->grid_size = m_neighbor_searcher->m_grid_size;
+	m_sim_params->num_cells = m_neighbor_searcher->m_num_grid_cells;
+	m_sim_params->world_origin = make_float3(0, 0, 0);
+	m_sim_params->cell_size = make_float3(m_sim_params->effective_radius);
+	m_sim_params->spring = 0.5f;
+	m_sim_params->damping = 0.02f;
+	m_sim_params->shear = 0.1f;
+	m_sim_params->attraction = 0.0f;
+	m_sim_params->boundary_damping = 0.3f;
+
+	setParams(m_sim_params);
+}
+
+void Simulation::GenerateFluidCube()
+{
+	// diameter of particle
+	const float diameter = 2.f * m_sim_params->particle_radius;
+	// number of particles on x,y,z
+	int nx, ny, nz;
+	// fluid cube extends
+	glm::vec3 half_extend(0.5f, 1.0f, 0.5f);
+	
+	nx = static_cast<int>(half_extend.x / diameter) - 1;
+	ny = static_cast<int>(half_extend.y / diameter) - 1;
+	nz = static_cast<int>(half_extend.z / diameter) - 1;
+
+	float x, y, z;
+	
+	//const float diameter = 0.5f;
+
+	size_t n_particles = 8 * nx * ny * nz;
+	ParticleSet* particles = m_particle_system->AllocateParticles(n_particles, m_particle_mass);
+
+	std::cout << "n_particles: " << n_particles << std::endl;
+	// set positions
+	size_t idx = 0;
+	for (int i = -nx; i < nx; ++i)
+	{
+		for (int j = -ny; j < ny; ++j)
+		{
+			for (int k = -nz; k < nz; ++k)
+			{
+				//int idx = k + j * 10 + i * 100;
+				x = 0.f + diameter * static_cast<float>(i);
+				y = 5.1f + diameter * static_cast<float>(j);
+				z = -0.f + diameter * static_cast<float>(k);
+				glm::vec3 pos(x, y, z);
+				particles->m_positions[idx] = pos;
+				particles->m_new_positions[idx] = pos;
+				particles->m_predict_positions[idx] = pos;
+				idx++;
+			}
+		}
+	}
+#ifdef _USE_CUDA_
+	m_particle_system->InitializeCUDA();
+#else
+	m_particle_system->Initilize();
+#endif
 }
 
 void Simulation::PredictPositions(float dt)

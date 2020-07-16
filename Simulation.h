@@ -19,6 +19,33 @@ struct SimWorldDesc
 	float global_velocity_damping;
 };
 
+struct SimParams
+{
+	float3 collider_pos;
+	float  collider_radius;
+
+	float3 gravity;
+	float global_damping;
+	float effective_radius;
+	float particle_radius;
+
+	uint3 grid_size;
+	uint num_cells;
+	float3 world_origin;
+	float3 cell_size;
+	/*
+	uint num_bodies;
+	uint max_particles_per_cell;
+	*/
+	float spring;
+	float damping;
+	float shear;
+	float attraction;
+	float boundary_damping;
+
+	float volume;
+};
+
 
 class Simulation
 {
@@ -50,6 +77,7 @@ public:
 private:
 
 	void SetupSimParams();
+	void GenerateFluidCube();
 
 	void PredictPositions(float dt);
 	void FindNeighborParticles(float effective_radius);
@@ -74,8 +102,14 @@ private:
 	bool m_first_frame;
 	bool m_pause;
 
+	/*fluid data*/
+	SimParams* m_sim_params;
+	SimParams* m_d_sim_params;
 	float m_rest_density;
 	float* m_d_rest_density;
+	float m_volume;
+	float m_particle_mass;
+	
 
 	std::shared_ptr<ConstraintSolver> m_solver;
 	std::shared_ptr<ParticleSystem> m_particle_system;

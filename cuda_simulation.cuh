@@ -3,33 +3,10 @@
 
 #include <cuda_runtime.h>
 #include "Particle.h"
+#include "Simulation.h"
 //#include <helper_math.h>
 
 #define MAX_THREAD_NUM 512
-
-struct SimParams
-{
-    float3 collider_pos;
-    float  collider_radius;
-
-    float3 gravity;
-    float global_damping;
-    float particle_radius;
-
-    uint3 grid_size;
-    uint num_cells;
-    float3 world_origin;
-    float3 cell_size;
-    /*
-    uint num_bodies;
-    uint max_particles_per_cell;
-    */
-    float spring;
-    float damping;
-    float shear;
-    float attraction;
-    float boundary_damping;
-};
 
 // simulation parameters
 __constant__ SimParams params;

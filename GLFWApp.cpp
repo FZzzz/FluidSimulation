@@ -74,7 +74,7 @@ bool GLFWApp::Initialize(int width , int height , const std::string &title)
 	glfwSetWindowPos(m_window, 100, 100);
 	glfwMakeContextCurrent(m_window);
 	glfwSetKeyCallback(m_window, Key_callback);
-	glfwSwapInterval(0);
+	glfwSwapInterval(1);
 
 	// Initialize glew
 	glewExperimental = true;
@@ -137,7 +137,7 @@ bool GLFWApp::Initialize(int width , int height , const std::string &title)
 		camera_desc.screen_height = f_height;
 		camera_desc.near_plane = 0.001f;
 		camera_desc.far_plane = 1000.0f;
-		camera_desc.position = glm::vec3(0.0f, 10.0f, 30.0f);
+		camera_desc.position = glm::vec3(0.0f, 1.5f, 5.0f);
 		camera_desc.target_position = glm::vec3(0, camera_desc.position.y, 0);
 		camera_desc.projection = glm::perspective(camera_desc.fov, f_width / f_height, 0.1f, 1000.0f);
 		camera_desc.lookAt = glm::lookAt(camera_desc.position, camera_desc.target_position, glm::vec3(0.0f, 1.0f, 0.0f));
@@ -188,7 +188,7 @@ bool GLFWApp::Initialize(int width , int height , const std::string &title)
 	}
 
 	//GenerateRadomParticles();
-	GenerateFluidParticles();
+	//GenerateFluidParticles();
 	/*
 	 *	End of resource settings
 	 */
@@ -380,15 +380,15 @@ void GLFWApp::GenerateFluidParticles()
 {
 	float x, y, z;
 
-	ParticleSet* particles = m_particle_system->AllocateParticles(100000, 0.1f);
+	ParticleSet* particles = m_particle_system->AllocateParticles(10000, 0.1f);
 	// set positions
 	for (int i = 0; i < 10; ++i)
 	{
-		for (int j = 0; j < 1000; ++j)
+		for (int j = 0; j < 100; ++j)
 		{
 			for (int k = 0; k < 10; ++k)
 			{
-				int idx = k + j * 10 + i * 10000;
+				int idx = k + j * 10 + i * 1000;
 				x = 0.f + 0.5f * static_cast<float>(i);
 				y = 0.5f + 0.5f * static_cast<float>(j);
 				z = -10.f + 0.5f * static_cast<float>(k);
