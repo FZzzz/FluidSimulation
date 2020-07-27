@@ -46,6 +46,16 @@ struct SimParams
 	float volume;
 };
 
+struct CellData
+{
+	uint* d_grid_hash;
+	uint* d_grid_index;
+	uint* d_cellStart;
+	uint* d_cellEnd;
+
+	float3* d_sorted_pos;
+};
+
 
 class Simulation
 {
@@ -77,6 +87,8 @@ public:
 private:
 
 	void SetupSimParams();
+
+	void InitializeBoundaryParticles();
 	void GenerateFluidCube();
 
 	void PredictPositions(float dt);
@@ -110,6 +122,7 @@ private:
 	float m_volume;
 	float m_particle_mass;
 	
+	CellData m_boundary_cell_data;
 
 	std::shared_ptr<ConstraintSolver> m_solver;
 	std::shared_ptr<ParticleSystem> m_particle_system;

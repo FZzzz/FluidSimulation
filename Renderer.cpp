@@ -121,39 +121,9 @@ void Renderer::RenderParticles()
 	//glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, m_particle_system->getEBO());
 
 	glDrawArrays(GL_POINTS, 0, m_particle_system->getParticles()->m_size);
-	/*
 
-	glDrawElements(
-		GL_POINTS,
-		static_cast<unsigned int>(particles->m_size),
-		GL_UNSIGNED_INT,
-		0
-	);
-	*/
 	glBindVertexArray(0);
-	/*
-	auto particles = m_particle_system->getParticles();
-	auto shader = m_resource_manager->FindShaderByName("PointSprite");
-#ifdef _DEBUG
-	assert(shader);
-#endif
-	shader->Use();
-
-	const glm::mat4 pvm = m_mainCamera->m_cameraMat * glm::mat4(1);
-	shader->SetUniformMat4("pvm", pvm);
-	shader->SetUniformFloat("point_size", 5.f);
-	shader->SetUniformVec3("light_pos", m_mainCamera->m_position);
-	shader->SetUniformMat4("view", m_mainCamera->m_lookAt);
-	glBindVertexArray(m_particle_system->getVAO());
-	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, m_particle_system->getEBO());
-	glDrawElements(
-		GL_POINTS,
-		static_cast<unsigned int>(particles.size()),
-		GL_UNSIGNED_INT,
-		0
-	);
-	glBindVertexArray(0);
-	*/
+	
 }
 
 void Renderer::RenderGameObject(const std::shared_ptr<Shader>& shader, const std::shared_ptr<Mesh>& mesh, const Transform& transform)

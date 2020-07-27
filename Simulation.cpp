@@ -251,7 +251,6 @@ bool Simulation::StepCUDA(float dt)
 	// Unmap CUDA buffer object
 	cudaGraphicsUnmapResources(1, vbo_resource, 0);
 
-	//m_particle_system->Update();
 	//m_pause = true;
 
 	return true;
@@ -353,6 +352,85 @@ void Simulation::SetupSimParams()
 	m_sim_params->boundary_damping = 1.0f;
 
 	setParams(m_sim_params);
+}
+
+void Simulation::InitializeBoundaryParticles()
+{
+	const float diameter = 2.f * m_sim_params->particle_radius;
+	// number of particles on x,y,z
+	int nx, ny, nz;
+	size_t n_particles = 0;
+	// fluid cube extends
+	// buttom
+	float x, y, z;
+
+	size_t n_particles = 8 * nx * ny * nz;
+
+	// Initialize boundary particles
+	ParticleSet* particles = m_particle_system->AllocateParticles(n_particles, m_particle_mass);
+	// Initialize positions
+	// Buttom boundary
+	size_t idx = 0;
+	for (int i = -nx; i < nx; ++i)
+	{
+		for (int j = -ny; j < ny; ++j)
+		{
+			for (int k = -nz; k < nz; ++k)
+			{
+				//int idx = k + j * 10 + i * 100;
+				x = 0.f + diameter * static_cast<float>(i);
+				y = 1.51f + diameter * static_cast<float>(j);
+				z = -0.f + diameter * static_cast<float>(k);
+				glm::vec3 pos(x, y, z);
+				particles->m_positions[idx] = pos;
+				particles->m_new_positions[idx] = pos;
+				particles->m_predict_positions[idx] = pos;
+				idx++;
+			}
+		}
+	}
+	// Left boundary
+	for (int i = -nx; i < nx; ++i)
+	{
+		for (int j = -ny; j < ny; ++j)
+		{
+			for (int k = -nz; k < nz; ++k)
+			{
+				//int idx = k + j * 10 + i * 100;
+				x = 0.f + diameter * static_cast<float>(i);
+				y = 1.51f + diameter * static_cast<float>(j);
+				z = -0.f + diameter * static_cast<float>(k);
+				glm::vec3 pos(x, y, z);
+				particles->m_positions[idx] = pos;
+				particles->m_new_positions[idx] = pos;
+				particles->m_predict_positions[idx] = pos;
+				idx++;
+			}
+		}
+	}
+	// Right boundary
+	for (int i = -nx; i < nx; ++i)
+	{
+		for (int j = -ny; j < ny; ++j)
+		{
+			for (int k = -nz; k < nz; ++k)
+			{
+				//int idx = k + j * 10 + i * 100;
+				x = 0.f + diameter * static_cast<float>(i);
+				y = 1.51f + diameter * static_cast<float>(j);
+				z = -0.f + diameter * static_cast<float>(k);
+				glm::vec3 pos(x, y, z);
+				particles->m_positions[idx] = pos;
+				particles->m_new_positions[idx] = pos;
+				particles->m_predict_positions[idx] = pos;
+				idx++;
+			}
+		}
+	}
+	// Precompute hash
+	// Sort
+	// Reorder
+
 }
 
 void Simulation::GenerateFluidCube()
