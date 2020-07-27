@@ -319,7 +319,7 @@ void Simulation::setGravity(float gravity)
 
 void Simulation::SetupSimParams()
 {
-	const size_t n_particles = 1000;
+	//const size_t n_particles = 1000;
 	const float particle_mass = 0.05f;
 	const float n_kernel_particles = 20.f;	
 	// water density = 1000 kg/m^3
@@ -350,7 +350,7 @@ void Simulation::SetupSimParams()
 	m_sim_params->damping = 0.02f;
 	m_sim_params->shear = 0.1f;
 	m_sim_params->attraction = 0.0f;
-	m_sim_params->boundary_damping = 0.3f;
+	m_sim_params->boundary_damping = 1.0f;
 
 	setParams(m_sim_params);
 }
@@ -362,7 +362,7 @@ void Simulation::GenerateFluidCube()
 	// number of particles on x,y,z
 	int nx, ny, nz;
 	// fluid cube extends
-	glm::vec3 half_extend(0.5f, 1.0f, 0.5f);
+	glm::vec3 half_extend(0.5f, 1.5f, 0.5f);
 	
 	nx = static_cast<int>(half_extend.x / diameter) - 1;
 	ny = static_cast<int>(half_extend.y / diameter) - 1;
@@ -386,7 +386,7 @@ void Simulation::GenerateFluidCube()
 			{
 				//int idx = k + j * 10 + i * 100;
 				x = 0.f + diameter * static_cast<float>(i);
-				y = 5.1f + diameter * static_cast<float>(j);
+				y = 1.51f + diameter * static_cast<float>(j);
 				z = -0.f + diameter * static_cast<float>(k);
 				glm::vec3 pos(x, y, z);
 				particles->m_positions[idx] = pos;

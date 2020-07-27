@@ -350,42 +350,48 @@ void integrate_pbd_d(
 {
 	uint index = __mul24(blockIdx.x, blockDim.x) + threadIdx.x;
 	
-	float3 t_vel = vel[index] + dt * make_float3(0, -9.81f, 0);
+	float3 t_vel = vel[index] + dt * params.gravity;
 	float3 t_pos = pos[index] + dt * t_vel;
 	
 	if (t_pos.x >= 1.0f)
 	{
+		t_pos.x = 1.f;
 		t_vel.x =  -params.boundary_damping * abs(t_vel.x);
 	}
 
 	if (t_pos.x <= -1.0f)
 	{
+	 	t_pos.x = -1.f;
 		t_vel.x = params.boundary_damping * abs(t_vel.x);
 	}
 
 	if (t_pos.z >= 1.0f)
 	{
+		t_pos.z = 1.f;
 		t_vel.z = -params.boundary_damping * abs(t_vel.z);
 	}
 
 	if (t_pos.z <= -1.0f)
 	{
+		t_pos.z = -1.f;
 		t_vel.z = params.boundary_damping * abs(t_vel.z);
 	}
 	
 	if (t_pos.y <= 0.f)
 	{
+		t_pos.y = 0.f;
 		t_vel.y = params.boundary_damping * abs(t_vel.y);
 	}
-	/*
+	
+	/* Velocity limitation
 	if (length(t_vel) > 5.f)
 	{
 		t_vel = (5.f / length(t_vel)) * t_vel ;
 	}
 	*/
 	
+	predict_pos[index] = t_pos;// +dt * t_vel;
 	vel[index] = t_vel;
-	predict_pos[index] = pos[index] + dt * t_vel;
 	new_pos[index] = predict_pos[index];
 
 

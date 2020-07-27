@@ -74,7 +74,7 @@ bool GLFWApp::Initialize(int width , int height , const std::string &title)
 	glfwSetWindowPos(m_window, 100, 100);
 	glfwMakeContextCurrent(m_window);
 	glfwSetKeyCallback(m_window, Key_callback);
-	glfwSwapInterval(1);
+	glfwSwapInterval(0);
 
 	// Initialize glew
 	glewExperimental = true;
@@ -332,7 +332,7 @@ void GLFWApp::Update()
 	
 	float dt = m_currentTime - m_previousTime;
 
-	const float time_step = 0.01f;
+	const float time_step = 0.0005f;
 #ifdef _USE_CUDA_
 	m_simulator->StepCUDA(time_step);
 #else
