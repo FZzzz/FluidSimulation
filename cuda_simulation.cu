@@ -215,6 +215,68 @@ void reorderDataAndFindCellStartD(
 	}
 }
 
+__global__
+void reorderData_boundary_D(
+	CellData cell_data,
+	float3* oldPos,           // input: sorted position array
+	uint    numParticles)
+{
+	// Handle to thread block group
+	cg::thread_block cta = cg::this_thread_block();
+	extern __shared__ uint sharedHash[];    // blockSize + 1 elements
+	uint index = __umul24(blockIdx.x, blockDim.x) + threadIdx.x;
+
+	uint hash;
+
+	// handle case when no. of particles not multiple of block size
+	if (index < numParticles)
+	{
+		hash = cell_data.grid_hash[index];
+
+		// Load hash data into shared memory so that we can look
+		// at neighboring particle's hash value without loading
+		// two hash values per thread
+		sharedHash[threadIdx.x + 1] = hash;
+
+		if (index > 0 && threadIdx.x == 0)
+		{
+			// first thread in block must load neighbor particle hash
+			sharedHash[0] = cell_data.grid_hash[index - 1];
+		}
+	}
+
+	cg::sync(cta);
+
+	if (index < numParticles)
+	{
+		// If this particle has a different cell index to the previous
+		// particle then it must be the first particle in the cell,
+		// so store the index of this particle in the cell.
+		// As it isn't the first particle, it must also be the cell end of
+		// the previous particle's cell
+
+		if (index == 0 || hash != sharedHash[threadIdx.x])
+		{
+			cell_data.cellStart[hash] = index;
+
+			if (index > 0)
+				cell_data.cellEnd[sharedHash[threadIdx.x]] = index;
+		}
+
+		if (index == numParticles - 1)
+		{
+			cell_data.cellEnd[hash] = index + 1;
+		}
+
+		// Now use the sorted index to reorder the pos data
+		uint sortedIndex = cell_data.grid_index[index];
+		float3 pos = oldPos[sortedIndex];
+
+		cell_data.sorted_pos[index] = pos;
+	}
+}
+
+
 void compute_grid_size(uint n, uint block_size, uint& num_blocks, uint& num_threads)
 {
 	num_threads = min(block_size, n);
@@ -232,6 +294,17 @@ void calculate_hash(
 	calcHashD << < num_blocks, num_threads >> > (
 		grid_particle_hash,
 		grid_particle_index,
+		pos,
+		num_particles);
+}
+
+void calculate_hash_boundary(CellData cell_data, float3* pos, uint num_particles)
+{
+	uint num_blocks, num_threads;
+	compute_grid_size(num_particles, MAX_THREAD_NUM, num_blocks, num_threads);
+	calcHashD << < num_blocks, num_threads >> > (
+		cell_data.grid_hash,
+		cell_data.grid_index,
 		pos,
 		num_particles);
 }
@@ -264,6 +337,27 @@ void reorderDataAndFindCellStart(
 		gridParticleIndex,
 		oldPos,
 		oldVel,
+		numParticles);
+	getLastCudaError("Kernel execution failed: reorderDataAndFindCellStartD");
+
+}
+
+void reorderData_boundary(
+	CellData cell_data, 
+	float3* oldPos, 
+	uint numParticles, 
+	uint numCells)
+{
+	uint numThreads, numBlocks;
+	compute_grid_size(numParticles, 256, numBlocks, numThreads);
+
+	// set all cells to empty
+	checkCudaErrors(cudaMemset(cell_data.cellStart, 0xffffffff, numCells * sizeof(uint)));
+
+	uint smemSize = sizeof(uint) * (numThreads + 1);
+	reorderData_boundary_D << < numBlocks, numThreads, smemSize >> > (
+		cell_data,
+		oldPos,
 		numParticles);
 	getLastCudaError("Kernel execution failed: reorderDataAndFindCellStartD");
 
@@ -885,12 +979,20 @@ void integratePBD(
 
 void sort_particles(uint* dGridParticleHash, uint* dGridParticleIndex, uint numParticles)
 {
-	//printf("uint size: %u\n", sizeof(uint));
 	thrust::sort_by_key(
 		thrust::device_ptr<uint>(dGridParticleHash),
 		thrust::device_ptr<uint>(dGridParticleHash + numParticles),
 		thrust::device_ptr<uint>(dGridParticleIndex)
 	);
+}
+
+void sort_particles_boundary(CellData cell_data, uint numParticles)
+{
+	thrust::sort_by_key(
+		thrust::device_ptr<uint>(cell_data.grid_hash),
+		thrust::device_ptr<uint>(cell_data.grid_hash + numParticles),
+		thrust::device_ptr<uint>(cell_data.grid_index)
+		);
 }
 
 void solve_dem_collision(

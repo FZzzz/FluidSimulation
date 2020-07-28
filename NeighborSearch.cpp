@@ -48,7 +48,6 @@ void NeighborSearch::InitializeCUDA()
     m_search_cache.resize(particles.size(), std::vector<size_t>());
     */
     const ParticleSet* const particles = m_particle_system->getParticles();
-    m_search_cache.resize(particles->m_size, std::vector<size_t>());
 
     /*Allocate CUDA memory*/
     //allocateArray((void**) &m_d_grid_particle_hash, particles->m_size * sizeof(uint));

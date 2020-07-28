@@ -23,6 +23,15 @@ Simulation::Simulation(SimWorldDesc desc)
 	: m_solver(nullptr), m_particle_system(nullptr), m_neighbor_searcher(nullptr), 
 	m_initialized(false), m_world_desc(desc), m_pause(false)
 {
+	// Free cuda memory
+	if (m_particle_system->getBoundaryParticles())
+	{
+		cudaFree(m_d_boundary_cell_data.grid_hash);
+		cudaFree(m_d_boundary_cell_data.grid_index);
+		cudaFree(m_d_boundary_cell_data.cellStart);
+		cudaFree(m_d_boundary_cell_data.cellEnd);
+		cudaFree(m_d_boundary_cell_data.sorted_pos);
+	}
 }
 
 Simulation::~Simulation()
@@ -44,11 +53,13 @@ void Simulation::Initialize(PBD_MODE mode, std::shared_ptr<ParticleSystem> parti
 
 #ifdef _USE_CUDA_
 	m_particle_system->InitializeCUDA();
-#else
-	m_particle_system->Initilize();
-#endif
-		
 	m_neighbor_searcher->InitializeCUDA();
+	InitializeBoundaryCellData();
+#else
+	m_particle_system->Initialize();
+	m_neighbor_searcher->Initialize();
+#endif
+	
 	m_initialized = true;
 	
 #ifdef _USE_CUDA_
@@ -494,10 +505,43 @@ void Simulation::InitializeBoundaryParticles()
 	std::cout << "Boundary particles: " << idx << std::endl;
 	particles->ResetPositions(positions, m_particle_mass);
 
-	// Precompute hash
-	// Sort
-	// Reorder
+}
 
+void Simulation::InitializeBoundaryCellData()
+{
+	auto boundary_particles = m_particle_system->getBoundaryParticles();
+	size_t num_particles = boundary_particles->m_size;
+
+	cudaMalloc((void**)&(m_d_boundary_cell_data.grid_hash), boundary_particles->m_size * sizeof(uint));
+	cudaMalloc((void**)&(m_d_boundary_cell_data.grid_index), boundary_particles->m_size * sizeof(uint));
+
+	cudaMalloc((void**)&(m_d_boundary_cell_data.cellStart), m_neighbor_searcher->m_num_grid_cells * sizeof(uint));
+	cudaMalloc((void**)&(m_d_boundary_cell_data.cellEnd), m_neighbor_searcher->m_num_grid_cells * sizeof(uint));
+
+	cudaMalloc((void**)&(m_d_boundary_cell_data.sorted_pos), boundary_particles->m_size * sizeof(float3));
+
+	cudaGraphicsResource** vbo_resource = m_particle_system->getBoundaryCUDAGraphicsResource();
+
+	// Map vbo to m_d_positinos
+	cudaGraphicsMapResources(1, vbo_resource, 0);
+
+	size_t num_bytes;
+	cudaGraphicsResourceGetMappedPointer((void**)&(boundary_particles->m_d_positions), &num_bytes, *vbo_resource);
+
+	// Precompute hash
+	calculate_hash_boundary(m_d_boundary_cell_data, boundary_particles->m_d_positions, num_particles);
+	// Sort
+	sort_particles_boundary(m_d_boundary_cell_data, num_particles);
+	// Reorder
+	reorderData_boundary(
+		m_d_boundary_cell_data, 
+		boundary_particles->m_d_positions, 
+		num_particles,
+		m_neighbor_searcher->m_num_grid_cells
+	);
+
+	// Unmap CUDA buffer object
+	cudaGraphicsUnmapResources(1, vbo_resource, 0);
 }
 
 void Simulation::GenerateFluidCube()

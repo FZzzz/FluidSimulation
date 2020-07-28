@@ -41,6 +41,22 @@ void calculate_hash(
     uint    num_particles
 );
 
+void calculate_hash_boundary(
+    CellData celldata,
+    float3* pos,
+    uint num_particles
+);
+
+void sort_particles(
+    uint* dGridParticleHash, uint* dGridParticleIndex,
+    uint numParticles
+);
+
+void sort_particles_boundary(
+    CellData cell_data,
+    uint numParticles
+);
+
 void reorderDataAndFindCellStart(
     uint* cellStart,
     uint* cellEnd,
@@ -54,10 +70,12 @@ void reorderDataAndFindCellStart(
     uint	numCells
 );
 
-void sort_particles(
-    uint* dGridParticleHash, uint* dGridParticleIndex,
-    uint numParticles
-);
+void reorderData_boundary(
+    CellData celldata,
+    float3* oldPos,
+    uint	numParticles,
+    uint	numCells
+    );
 
 void solve_dem_collision(
     float3* newVel,
