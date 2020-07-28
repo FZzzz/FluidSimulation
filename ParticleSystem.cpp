@@ -2,6 +2,7 @@
 #include <cuda_runtime.h>
 #include <chrono>
 #include "imgui/imgui.h"
+#include <iostream>
 
 ParticleSystem::ParticleSystem() :
 	m_particles(nullptr),
@@ -57,38 +58,44 @@ void ParticleSystem::UpdateCUDA()
 
 void ParticleSystem::Release()
 {
-	if (m_particles == nullptr)
-		return;
-	
-	// Release fluid particle cuda memory
-	//cudaFree(m_particles->m_d_prev_positions);
-	//cudaFree(m_particles->m_d_positions);
-	cudaFree(m_particles->m_d_predict_positions);
-	cudaFree(m_particles->m_d_new_positions);
-	cudaFree(m_particles->m_d_prev_velocity);
-	cudaFree(m_particles->m_d_velocity);
-	cudaFree(m_particles->m_d_new_velocity);
+	if (m_particles != nullptr)
+	{
 
-	cudaFree(m_particles->m_d_sorted_position);
-	cudaFree(m_particles->m_d_sorted_velocity);
+		// Release fluid particle cuda memory
+		//cudaFree(m_particles->m_d_prev_positions);
+		//cudaFree(m_particles->m_d_positions);
+		cudaFree(m_particles->m_d_predict_positions);
+		cudaFree(m_particles->m_d_new_positions);
+		cudaFree(m_particles->m_d_prev_velocity);
+		cudaFree(m_particles->m_d_velocity);
+		cudaFree(m_particles->m_d_new_velocity);
 
-	cudaFree(m_particles->m_d_force);
-	cudaFree(m_particles->m_d_mass);
-	cudaFree(m_particles->m_d_massInv);
-	cudaFree(m_particles->m_d_density);
-	cudaFree(m_particles->m_d_C);
-	cudaFree(m_particles->m_d_lambda);
+		cudaFree(m_particles->m_d_sorted_position);
+		cudaFree(m_particles->m_d_sorted_velocity);
 
-	// Release boundary particle cuda memory
-	cudaFree(m_particles->m_d_mass);
-	cudaFree(m_particles->m_d_massInv);
-	cudaFree(m_particles->m_d_density);
-	cudaFree(m_particles->m_d_C);
-	cudaFree(m_particles->m_d_lambda);
+		cudaFree(m_particles->m_d_force);
+		cudaFree(m_particles->m_d_mass);
+		cudaFree(m_particles->m_d_massInv);
+		cudaFree(m_particles->m_d_density);
+		cudaFree(m_particles->m_d_C);
+		cudaFree(m_particles->m_d_lambda);
 
+		cudaGraphicsUnregisterResource(m_cuda_vbo_resource);
+		delete m_particles;
+	}
 
-	cudaGraphicsUnregisterResource(m_cuda_vbo_resource);
-	cudaGraphicsUnregisterResource(m_boundary_cuda_vbo_resource);
+	if (m_boundary_particles != nullptr)
+	{
+		// Release boundary particle cuda memory
+		cudaFree(m_boundary_particles->m_d_mass);
+		cudaFree(m_boundary_particles->m_d_massInv);
+		cudaFree(m_boundary_particles->m_d_density);
+		cudaFree(m_boundary_particles->m_d_C);
+		cudaFree(m_boundary_particles->m_d_lambda);
+		cudaGraphicsUnregisterResource(m_boundary_cuda_vbo_resource);
+		delete m_boundary_particles;
+	}
+
 }
 
 ParticleSet* ParticleSystem::AllocateParticles(size_t n, float particle_mass)
@@ -97,10 +104,10 @@ ParticleSet* ParticleSystem::AllocateParticles(size_t n, float particle_mass)
 	return m_particles;
 }
 
-ParticleSet* ParticleSystem::AllocateBoundaryParticles(size_t n, float particle_mass)
+ParticleSet* ParticleSystem::AllocateBoundaryParticles()
 {
-	m_boundary_particles = new ParticleSet(n, particle_mass);
-	return nullptr;
+	m_boundary_particles = new ParticleSet();
+	return m_boundary_particles;
 }
 
 void ParticleSystem::SetupCUDAMemory()
@@ -252,7 +259,12 @@ void ParticleSystem::SetupCUDAMemory()
 
 	// Boundary particless
 	{
-
+		if (!m_boundary_particles)
+		{
+			std::cout << "No boundary particles\n";
+			return;
+		}
+		
 		float* mass = m_boundary_particles->m_mass.data();
 		float* massInv = m_boundary_particles->m_massInv.data();
 		float* density = m_boundary_particles->m_density.data();
@@ -321,8 +333,10 @@ void ParticleSystem::SetupCUDAMemory()
 
 void ParticleSystem::RegisterCUDAVBO()
 {
-	cudaGraphicsGLRegisterBuffer(&m_cuda_vbo_resource, m_vbo, cudaGraphicsMapFlagsNone);
-	cudaGraphicsGLRegisterBuffer(&m_boundary_cuda_vbo_resource, m_boundary_vbo, cudaGraphicsMapFlagsNone);
+	if(m_particles)
+		cudaGraphicsGLRegisterBuffer(&m_cuda_vbo_resource, m_vbo, cudaGraphicsMapFlagsNone);
+	if(m_boundary_particles)
+		cudaGraphicsGLRegisterBuffer(&m_boundary_cuda_vbo_resource, m_boundary_vbo, cudaGraphicsMapFlagsNone);
 }
 
 void ParticleSystem::GenerateGLBuffers()
@@ -356,6 +370,9 @@ void ParticleSystem::UpdateGLBUfferData()
 
 	glBindBuffer(GL_ARRAY_BUFFER, 0);
 	glBindVertexArray(0);
+
+	if (!m_boundary_particles || m_boundary_particles->m_size == 0)
+		return;
 
 	// Boundary particle GL buffer data
 	glBindVertexArray(m_boundary_vao);

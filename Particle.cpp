@@ -164,6 +164,11 @@ void Particle::OnCollision(Collider* other, const float& dt)
 	m_new_position = m_position + dt * m_velocity;
 }
 
+ParticleSet::ParticleSet()
+	: m_size(0)
+{
+}
+
 ParticleSet::ParticleSet(size_t n, float particle_mass)
 	: m_size(n)
 {
@@ -330,4 +335,33 @@ void ParticleSet::OnCollision(size_t i, Collider* other, float dt)
 	/*Re-prediction*/
 	m_predict_positions[i] = m_positions[i] + dt * m_velocity[i];
 	m_new_positions[i] = m_predict_positions[i];
+}
+
+/* 
+    This is the dirty function for setting boundary particles in convenience
+	Fix this if possible
+*/
+void ParticleSet::ResetPositions(std::vector<glm::vec3> positions, float particle_mass)
+{
+	m_positions.clear();
+
+	m_positions = positions;
+	m_size = m_positions.size();
+
+	m_predict_positions.resize(m_size, glm::vec3(0, 0, 0));
+	m_new_positions.resize(m_size, glm::vec3(0, 0, 0));
+
+	m_velocity.resize(m_size, glm::vec3(0.f, 0, 0.f));
+	m_force.resize(m_size, glm::vec3(0, 0, 0));
+
+	m_mass.resize(m_size, particle_mass);
+	m_massInv.resize(m_size, 1.f / particle_mass);
+	m_density.resize(m_size, 0.f);
+	m_C.resize(m_size, 0.f);
+	m_lambda.resize(m_size, 0.f);
+}
+
+void ParticleSet::EraseTail(size_t start)
+{
+
 }

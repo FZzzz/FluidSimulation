@@ -102,6 +102,7 @@ void Renderer::RenderObjects()
 
 void Renderer::RenderParticles()
 {
+	// fluid particles
 	const ParticleSet* const particles = m_particle_system->getParticles();
 	const std::shared_ptr<Shader> shader = m_resource_manager->FindShaderByName("PointSprite");
 #ifdef _DEBUG
@@ -123,7 +124,19 @@ void Renderer::RenderParticles()
 	glDrawArrays(GL_POINTS, 0, m_particle_system->getParticles()->m_size);
 
 	glBindVertexArray(0);
-	
+
+#ifdef _RENDER_BOUNDARY_
+	// render boundary particles
+	const ParticleSet* const boundary_particles = m_particle_system->getBoundaryParticles();
+	glBindVertexArray(m_particle_system->getBoundaryVAO());
+	glBindBuffer(GL_ARRAY_BUFFER, m_particle_system->getBoundaryVBO());
+	glEnableVertexAttribArray(0);
+	glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 0, 0);
+
+	glDrawArrays(GL_POINTS, 0, m_particle_system->getBoundaryParticles()->m_size);
+
+	glBindVertexArray(0);
+#endif
 }
 
 void Renderer::RenderGameObject(const std::shared_ptr<Shader>& shader, const std::shared_ptr<Mesh>& mesh, const Transform& transform)

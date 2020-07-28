@@ -40,6 +40,13 @@ void Simulation::Initialize(PBD_MODE mode, std::shared_ptr<ParticleSystem> parti
 
 	SetupSimParams();
 	GenerateFluidCube();
+	InitializeBoundaryParticles();
+
+#ifdef _USE_CUDA_
+	m_particle_system->InitializeCUDA();
+#else
+	m_particle_system->Initilize();
+#endif
 		
 	m_neighbor_searcher->InitializeCUDA();
 	m_initialized = true;
@@ -356,77 +363,137 @@ void Simulation::SetupSimParams()
 
 void Simulation::InitializeBoundaryParticles()
 {
+	const int thickness = 1;
 	const float diameter = 2.f * m_sim_params->particle_radius;
 	// number of particles on x,y,z
 	int nx, ny, nz;
-	size_t n_particles = 0;
+	//size_t n_particles = 0;
 	// fluid cube extends
-	// buttom
-	float x, y, z;
-
-	size_t n_particles = 8 * nx * ny * nz;
-
+	glm::vec3 half_extend1(1.0f, diameter * static_cast<float>(thickness), 1.0f);
+	glm::vec3 half_extend2(diameter * static_cast<float>(thickness), 1.0f, 1.0f);
+	glm::vec3 half_extend3(1.0f, 1.0f, diameter * static_cast<float>(thickness));
+	
 	// Initialize boundary particles
-	ParticleSet* particles = m_particle_system->AllocateParticles(n_particles, m_particle_mass);
+	ParticleSet* particles = m_particle_system->AllocateBoundaryParticles();
+
+
 	// Initialize positions
+	float x, y, z;
+	std::vector<glm::vec3> positions;
 	// Buttom boundary
 	size_t idx = 0;
+	nx = static_cast<int>(half_extend1.x / diameter);
+	ny = static_cast<int>(half_extend1.y / diameter);
+	nz = static_cast<int>(half_extend1.z / diameter);
+
+	// buttom
+	float left_margin = INFINITY, right_margin = -INFINITY;
+	glm::vec3 buttom_origin(0, 0, 0);
+
 	for (int i = -nx; i < nx; ++i)
+	{
+		for (int j = 0; j < thickness; ++j)
+		{
+			for (int k = -nz; k < nz; ++k)
+			{
+				//int idx = k + j * 10 + i * 100;
+				x = buttom_origin.x + diameter * static_cast<float>(i);
+				y = buttom_origin.y + diameter * static_cast<float>(j);
+				z = buttom_origin.z + diameter * static_cast<float>(k);
+				glm::vec3 pos(x, y, z);
+				positions.push_back(pos);
+
+				if ( x < left_margin) left_margin = x;
+				if ( x > right_margin) right_margin = x;
+				idx++;
+			}
+		}
+	}
+
+	left_margin -= diameter;
+	right_margin += diameter;
+
+	nx = static_cast<int>(half_extend2.x / diameter);
+	ny = static_cast<int>(half_extend2.y / diameter);
+	nz = static_cast<int>(half_extend2.z / diameter);
+
+	// left && right
+	float back_margin = INFINITY, front_margin = -INFINITY;
+	glm::vec3 left_origin(left_margin, ny * diameter, 0);
+	glm::vec3 right_origin(right_margin, ny * diameter, 0);
+
+
+	for (int i = 0; i < thickness; ++i)
 	{
 		for (int j = -ny; j < ny; ++j)
 		{
 			for (int k = -nz; k < nz; ++k)
 			{
-				//int idx = k + j * 10 + i * 100;
-				x = 0.f + diameter * static_cast<float>(i);
-				y = 1.51f + diameter * static_cast<float>(j);
-				z = -0.f + diameter * static_cast<float>(k);
+				// left
+				x = diameter * static_cast<float>(i);
+				y = diameter * static_cast<float>(j);
+				z = diameter * static_cast<float>(k);
 				glm::vec3 pos(x, y, z);
-				particles->m_positions[idx] = pos;
-				particles->m_new_positions[idx] = pos;
-				particles->m_predict_positions[idx] = pos;
+				pos += left_origin;
+				positions.push_back(pos);
 				idx++;
+
+				// right
+				x = diameter * static_cast<float>(i);
+				y = diameter * static_cast<float>(j);
+				z = diameter * static_cast<float>(k);
+				pos = glm::vec3(x, y, z);
+				pos += right_origin;
+				positions.push_back(pos);
+				idx++;
+
+				if (z < back_margin) back_margin = z;
+				if (z > front_margin) front_margin = z;
+
 			}
 		}
 	}
-	// Left boundary
+
+	back_margin -= diameter;
+	front_margin += diameter;
+
+	nx = static_cast<int>(half_extend3.x / diameter);
+	ny = static_cast<int>(half_extend3.y / diameter);
+	nz = static_cast<int>(half_extend3.z / diameter);
+
+	// back && front boundary
+	glm::vec3 back_origin(0, ny * diameter, back_margin);
+	glm::vec3 front_origin(0, ny* diameter, front_margin);
 	for (int i = -nx; i < nx; ++i)
 	{
 		for (int j = -ny; j < ny; ++j)
 		{
-			for (int k = -nz; k < nz; ++k)
+			for (int k = 0; k < thickness; ++k)
 			{
-				//int idx = k + j * 10 + i * 100;
-				x = 0.f + diameter * static_cast<float>(i);
-				y = 1.51f + diameter * static_cast<float>(j);
-				z = -0.f + diameter * static_cast<float>(k);
+				// left
+				x = diameter * static_cast<float>(i);
+				y = diameter * static_cast<float>(j);
+				z = diameter * static_cast<float>(k);
 				glm::vec3 pos(x, y, z);
-				particles->m_positions[idx] = pos;
-				particles->m_new_positions[idx] = pos;
-				particles->m_predict_positions[idx] = pos;
+				pos += back_origin;
+				positions.push_back(pos);
+				idx++;
+
+				// right
+				x = diameter * static_cast<float>(i);
+				y = diameter * static_cast<float>(j);
+				z = diameter * static_cast<float>(k);
+				pos = glm::vec3(x, y, z);
+				pos += front_origin;
+				positions.push_back(pos);
 				idx++;
 			}
 		}
 	}
-	// Right boundary
-	for (int i = -nx; i < nx; ++i)
-	{
-		for (int j = -ny; j < ny; ++j)
-		{
-			for (int k = -nz; k < nz; ++k)
-			{
-				//int idx = k + j * 10 + i * 100;
-				x = 0.f + diameter * static_cast<float>(i);
-				y = 1.51f + diameter * static_cast<float>(j);
-				z = -0.f + diameter * static_cast<float>(k);
-				glm::vec3 pos(x, y, z);
-				particles->m_positions[idx] = pos;
-				particles->m_new_positions[idx] = pos;
-				particles->m_predict_positions[idx] = pos;
-				idx++;
-			}
-		}
-	}
+
+	std::cout << "Boundary particles: " << idx << std::endl;
+	particles->ResetPositions(positions, m_particle_mass);
+
 	// Precompute hash
 	// Sort
 	// Reorder
@@ -442,9 +509,9 @@ void Simulation::GenerateFluidCube()
 	// fluid cube extends
 	glm::vec3 half_extend(0.5f, 1.5f, 0.5f);
 	
-	nx = static_cast<int>(half_extend.x / diameter) - 1;
-	ny = static_cast<int>(half_extend.y / diameter) - 1;
-	nz = static_cast<int>(half_extend.z / diameter) - 1;
+	nx = static_cast<int>(half_extend.x / diameter);
+	ny = static_cast<int>(half_extend.y / diameter);
+	nz = static_cast<int>(half_extend.z / diameter);
 
 	float x, y, z;
 	
@@ -463,9 +530,9 @@ void Simulation::GenerateFluidCube()
 			for (int k = -nz; k < nz; ++k)
 			{
 				//int idx = k + j * 10 + i * 100;
-				x = 0.f + diameter * static_cast<float>(i);
+				x = 0.f   + diameter * static_cast<float>(i);
 				y = 1.51f + diameter * static_cast<float>(j);
-				z = -0.f + diameter * static_cast<float>(k);
+				z = -0.f  + diameter * static_cast<float>(k);
 				glm::vec3 pos(x, y, z);
 				particles->m_positions[idx] = pos;
 				particles->m_new_positions[idx] = pos;
@@ -474,11 +541,8 @@ void Simulation::GenerateFluidCube()
 			}
 		}
 	}
-#ifdef _USE_CUDA_
-	m_particle_system->InitializeCUDA();
-#else
-	m_particle_system->Initilize();
-#endif
+	std::cout << "idx " << idx << std::endl;
+
 }
 
 void Simulation::PredictPositions(float dt)

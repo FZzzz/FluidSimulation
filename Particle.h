@@ -38,6 +38,7 @@ struct ParticleDataCUDA
 class ParticleSet
 {
 public:
+	ParticleSet();
 	ParticleSet(size_t n, float particle_mass);
 	~ParticleSet();
 
@@ -45,6 +46,10 @@ public:
 
 	bool TestCollision(size_t i,Collider* other);
 	void OnCollision(size_t i, Collider* other, float dt);
+
+	void ResetPositions(std::vector<glm::vec3> positions, float particle_mass);
+	void EraseTail(size_t start);
+
 
 
 	size_t m_size;

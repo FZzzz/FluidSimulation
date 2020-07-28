@@ -22,7 +22,7 @@ public:
 	void Release();
 
 	ParticleSet* AllocateParticles(size_t n, float particle_mass);
-	ParticleSet* AllocateBoundaryParticles(size_t n, float particle_mass);
+	ParticleSet* AllocateBoundaryParticles();
 
 	//void setParticles(std::vector<std::shared_ptr<Particle>> particles);
 
