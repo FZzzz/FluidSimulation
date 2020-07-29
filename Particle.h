@@ -24,9 +24,7 @@ struct ParticleDataCUDA
 	/* sorted array on GPU */
 	float3* m_d_sorted_position;
 	float3* m_d_sorted_velocity;
-	float* m_d_sorted_density;
-	float* m_d_sorted_C;
-	float* m_d_sorted_lambda;
+
 
 	float* m_d_mass;
 	float* m_d_massInv;
@@ -67,6 +65,7 @@ public:
 	std::vector<float>		m_density;
 	std::vector<float>		m_C;
 	std::vector<float>		m_lambda;
+	std::vector<float>		m_volume;
 
 	//ParticleDataCUDA* m_d_cuda
 	float3* m_d_prev_positions;
@@ -90,6 +89,7 @@ public:
 	float* m_d_density;
 	float* m_d_C;
 	float* m_d_lambda;	
+	float* m_d_volume;
 };
 
 /* deprecated("Using ParticleSet class instead\n") */

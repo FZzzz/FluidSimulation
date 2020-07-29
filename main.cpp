@@ -12,7 +12,7 @@ int main()
 	//Create GLFWApp
 	std::unique_ptr<GLFWApp> demoApp(GLFWApp::getInstance());
 
-	demoApp->Initialize(1920, 1080, "GLEngine");
+	demoApp->Initialize(1600, 900, "FluidSimulation");
 
 	/*
 		Add text to App

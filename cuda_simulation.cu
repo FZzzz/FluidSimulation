@@ -122,6 +122,41 @@ float3 collideCell(
 	return force;
 }
 
+inline __device__
+float sph_boundary_volume(
+	int3 grid_pos,
+	uint index,
+	float3 pos1,
+	float* mass,
+	CellData data
+)
+{
+	uint grid_hash = calcGridHash(grid_pos);
+
+	uint start_index = data.cellStart[grid_hash];
+
+	float rho = 0.f;
+
+	if (start_index != 0xffffffff)
+	{
+		uint end_index = data.cellEnd[grid_hash];
+
+		for (uint j = start_index; j < end_index; ++j)
+		{
+			if (j != index)
+			{
+				uint original_index = data.grid_index[j];
+				float3 pos2 = data.sorted_pos[j];
+				float3 vec = pos1 - pos2;
+				float dist = length(vec);
+				rho += mass[original_index] * Poly6_W_CUDA(dist, params.effective_radius);
+			}
+		}
+	}
+
+	return rho;
+}
+
 __global__ void calcHashD(
 	uint* grid_particle_hash,  // output
 	uint* grid_particle_index, // output
@@ -142,6 +177,31 @@ __global__ void calcHashD(
 	grid_particle_hash[index] = hash;
 	grid_particle_index[index] = index;
 }
+
+__global__ 
+void calcHash_boundary_D(
+	CellData cell_data,
+	float3* pos,               // input: positions
+	uint    num_particles)
+{
+	uint index = __umul24(blockIdx.x, blockDim.x) + threadIdx.x;
+
+	if (index >= num_particles) return;
+
+	//printf("%u \n", index);
+
+	volatile float3 p = pos[index];
+
+	// get address in grid
+	int3 gridPos = calcGridPos(make_float3(p.x, p.y, p.z));
+	uint hash = calcGridHash(gridPos);
+
+	// store grid hash and particle index
+	cell_data.grid_hash[index] = hash;
+	cell_data.grid_index[index] = index;
+}
+
+
 
 /*
  * Reorder data to find cell start and end (for neighbor searching)
@@ -275,7 +335,50 @@ void reorderData_boundary_D(
 		cell_data.sorted_pos[index] = pos;
 	}
 }
+__global__
+void compute_boundary_volume_d(
+	CellData data, 
+	float* mass, float* volume, 
+	uint numParticles)
+{
+	uint index = __mul24(blockIdx.x, blockDim.x) + threadIdx.x;
 
+	if (index >= numParticles) return;
+
+	uint originalIndex = data.grid_index[index];
+
+	// read particle data from sorted arrays
+	float3 pos = data.sorted_pos[index];
+
+	// initial volume
+	float rho = mass[originalIndex] * Poly6_W_CUDA(0, params.effective_radius);
+
+	// get address in grid
+	int3 gridPos = calcGridPos(pos);
+
+	// traverse 27 neighbors
+	for (int z = -1; z <= 1; z++)
+	{
+		for (int y = -1; y <= 1; y++)
+		{
+			for (int x = -1; x <= 1; x++)
+			{
+				int3 neighbor_pos = gridPos + make_int3(x, y, z);
+				rho += sph_boundary_volume(
+					neighbor_pos, index,
+					pos, mass,
+					data
+				);
+			}
+		}
+	}
+
+	// Update volume
+	volume[originalIndex] = mass[originalIndex] / rho;
+
+	//printf("rho = %f\n", rho);
+	//printf("C[%u]: %f\n", originalIndex, C[originalIndex]);
+}
 
 void compute_grid_size(uint n, uint block_size, uint& num_blocks, uint& num_threads)
 {
@@ -296,17 +399,19 @@ void calculate_hash(
 		grid_particle_index,
 		pos,
 		num_particles);
+	getLastCudaError("Kernel execution failed: calc_hash");
 }
 
 void calculate_hash_boundary(CellData cell_data, float3* pos, uint num_particles)
 {
 	uint num_blocks, num_threads;
 	compute_grid_size(num_particles, MAX_THREAD_NUM, num_blocks, num_threads);
-	calcHashD << < num_blocks, num_threads >> > (
-		cell_data.grid_hash,
-		cell_data.grid_index,
+
+	calcHash_boundary_D << < num_blocks, num_threads >> > (
+		cell_data,
 		pos,
 		num_particles);
+	getLastCudaError("Kernel execution failed: calc_hash_boundary");
 }
 
 void reorderDataAndFindCellStart(
@@ -322,7 +427,7 @@ void reorderDataAndFindCellStart(
 	uint	numCells)
 {
 	uint numThreads, numBlocks;
-	compute_grid_size(numParticles, 256, numBlocks, numThreads);
+	compute_grid_size(numParticles, MAX_THREAD_NUM, numBlocks, numThreads);
 
 	// set all cells to empty
 	checkCudaErrors(cudaMemset(cellStart, 0xffffffff, numCells * sizeof(uint)));
@@ -349,7 +454,7 @@ void reorderData_boundary(
 	uint numCells)
 {
 	uint numThreads, numBlocks;
-	compute_grid_size(numParticles, 256, numBlocks, numThreads);
+	compute_grid_size(numParticles, MAX_THREAD_NUM, numBlocks, numThreads);
 
 	// set all cells to empty
 	checkCudaErrors(cudaMemset(cell_data.cellStart, 0xffffffff, numCells * sizeof(uint)));
@@ -361,6 +466,19 @@ void reorderData_boundary(
 		numParticles);
 	getLastCudaError("Kernel execution failed: reorderDataAndFindCellStartD");
 
+}
+
+void compute_boundary_volume(CellData data, float* mass, float* volume, uint numParticles)
+{
+	uint numThreads, numBlocks;
+	compute_grid_size(numParticles, MAX_THREAD_NUM, numBlocks, numThreads);
+
+	compute_boundary_volume_d << <numBlocks, numThreads >> > (
+		data,
+		mass, volume,
+		numParticles);
+
+	getLastCudaError("Kernel execution failed: copmute_boundary_volume");
 }
 
 __global__ void test_offset(float3* positions)
@@ -446,7 +564,7 @@ void integrate_pbd_d(
 	
 	float3 t_vel = vel[index] + dt * params.gravity;
 	float3 t_pos = pos[index] + dt * t_vel;
-	
+	/*
 	if (t_pos.x >= 1.0f)
 	{
 		t_pos.x = 1.f;
@@ -545,7 +663,9 @@ float pbf_density(
 	float*	mass,
 	uint*	cell_start,
 	uint*	cell_end,
-	uint*	gridParticleIndex)
+	uint*	gridParticleIndex,
+	int type,
+	float*	b_volume = nullptr) // type: 0->fluid fluid 1->boundary boundary 
 {
 	uint grid_hash = calcGridHash(grid_pos);
 
@@ -567,8 +687,11 @@ float pbf_density(
 				float3 pos2 = sorted_pos[j];
 				float3 vec = pos - pos2;
 				float dist = length(vec);
-				
-				float rho = mass[original_index] * Poly6_W_CUDA(dist, params.effective_radius);
+				float rho = 0.f;
+				if(type == 0)
+					rho = mass[original_index] * Poly6_W_CUDA(dist, params.effective_radius);
+				else if (type == 1)
+					rho = b_volume[original_index] * Poly6_W_CUDA(dist, params.effective_radius);
 
 				density += rho;
 			}
@@ -579,15 +702,102 @@ float pbf_density(
 }
 
 inline __device__
+float pbf_density_boundary(
+	int3    grid_pos,
+	float3  pos1,
+	float* volume,
+	CellData cell_data
+)
+{
+	uint grid_hash = calcGridHash(grid_pos);
+
+	// get start of bucket for this cell
+	uint start_index = cell_data.cellStart[grid_hash];
+	float density = 0.0f;
+
+	// if cell of boundary cell data is not empty
+	if (start_index != 0xffffffff)
+	{
+		// iterate over particles in this cell
+		uint end_index = cell_data.cellEnd[grid_hash];
+
+		for (uint j = start_index; j < end_index; j++)
+		{	
+			// no need to check collision (boundary cell data is not the same as fluid cell data)
+			uint original_index = cell_data.grid_index[j];
+
+			float3 pos2 = cell_data.sorted_pos[j];
+			float3 vec = pos1 - pos2;
+			float dist = length(vec);
+
+			float rho = volume[original_index] * Poly6_W_CUDA(dist, params.effective_radius);
+
+			density += rho;	
+		}
+	}
+
+	// return contributions of boundary paritcles
+	return density;
+}
+
+// boundary - fluid
+inline __device__
+float pbf_boundary_density(
+	// boundary
+	int3		grid_pos,	// searching grid pos
+	float3		pos1,		// position of boundary particle
+	// fluid
+	float*		mass,
+	float3*		sorted_pos,
+	uint*		cell_start,
+	uint*		cell_end,
+	uint*		gridParticleIndex
+)
+{
+	uint grid_hash = calcGridHash(grid_pos);
+
+	// get start of bucket for this cell
+	uint start_index = cell_start[grid_hash];
+	float density = 0.0f;
+
+	// if cell of boundary cell data is not empty
+	if (start_index != 0xffffffff)
+	{
+		// iterate over particles in this cell
+		uint end_index = cell_end[grid_hash];
+
+		for (uint j = start_index; j < end_index; j++)
+		{
+			// no need to check collision (boundary cell data is not the same as fluid cell data)
+			uint original_index = gridParticleIndex[j];
+
+			float3 pos2 = sorted_pos[j];
+			float3 vec = pos1 - pos2;
+			float dist = length(vec);
+
+			float rho = mass[original_index] * Poly6_W_CUDA(dist, params.effective_radius);
+
+			density += rho;
+		}
+	}
+
+	// return contributions of boundary paritcles
+	return density;
+}
+
+inline __device__
 float pbf_lambda(
 	int3    grid_pos,
 	uint    index,
 	float3  pos,
 	float*	rest_density,
+	float*	mass,
 	float3* sorted_pos,
 	uint*	cell_start,
 	uint*	cell_end,
-	uint*	gridParticleIndex)
+	uint*	gridParticleIndex,
+	int		type,
+	float*	b_volume=nullptr)
 {
 	uint grid_hash = calcGridHash(grid_pos);
 
@@ -604,16 +814,115 @@ float pbf_lambda(
 		{
 			if (j != index)                // check not colliding with self
 			{
+				uint original_index = gridParticleIndex[j];
+				float particle_mass = mass[original_index];
 				float3 pos2 = sorted_pos[j];
 				float3 vec = pos - pos2;
 				float dist = length(vec);
 
-				float3 gradientC_j = (1.f / (*rest_density)) *
-					Spiky_W_Gradient_CUDA(vec, dist, params.effective_radius);
+				float3 gradientC_j;
+				if (type == 0) // fluid - fluid
+				{
+					gradientC_j = (1.f / (*rest_density)) *
+						Spiky_W_Gradient_CUDA(vec, dist, params.effective_radius);
+				}
+				else if (type == 1) // boundary - boundary
+				{
+					float vol = b_volume[original_index];
+					float3 gradientC_j = (1.f / (*rest_density)) *
+						((*rest_density) * vol / particle_mass) *
+						Spiky_W_Gradient_CUDA(vec, dist, params.effective_radius);
+				}
 
 				float dot_val = dot(gradientC_j, gradientC_j);
 				gradientC_sum += dot_val;
 			}
+		}
+	}
+	return gradientC_sum;
+}
+
+// fluid - boundary
+inline __device__
+float pbf_lambda_boundary(
+	int3		grid_pos,	// searching grid pos
+	float3		pos1,		// position of fluid particle
+	float*		rest_density,
+	float		particle_mass,
+	CellData	cell_data,	// cell data of boundary particle,
+	float*		volume
+)
+{
+	uint grid_hash = calcGridHash(grid_pos);
+
+	// get start of bucket for this cell
+	uint start_index = cell_data.cellStart[grid_hash];
+	float gradientC_sum = 0.f;
+
+	if (start_index != 0xffffffff)          // cell is not empty
+	{
+		// iterate over particles in this cell
+		uint end_index = cell_data.cellEnd[grid_hash];
+
+		for (uint j = start_index; j < end_index; j++)
+		{
+			uint original_index = cell_data.grid_index[j];
+			float vol = volume[original_index];
+
+			float3 pos2 = cell_data.sorted_pos[j];
+			float3 vec = pos1 - pos2;
+			float dist = length(vec);
+
+			float3 gradientC_j = (1.f / (*rest_density)) * 
+				((*rest_density) * vol / particle_mass) *  
+				Spiky_W_Gradient_CUDA(vec, dist, params.effective_radius);
+
+			float dot_val = dot(gradientC_j, gradientC_j);
+			gradientC_sum += dot_val;
+		}
+	}
+	return gradientC_sum;
+}
+
+// Boundary - fluid 
+inline __device__
+float pbf_boundary_lambda(
+	// boundary
+	int3		grid_pos,	// searching grid pos
+	float3		pos1,		// position of boundary particle
+	float*		rest_density,
+	float		particle_mass,
+	float		volume,
+	// fluid
+	float3*		sorted_pos,  
+	uint*		cell_start,
+	uint*		cell_end,
+	uint*		gridParticleIndex
+)
+{
+	uint grid_hash = calcGridHash(grid_pos);
+
+	// get start of bucket for this cell
+	uint start_index = cell_start[grid_hash];
+	float gradientC_sum = 0.f;
+
+	// search in fluid cell
+	if (start_index != 0xffffffff)          // cell is not empty
+	{
+		// iterate over particles in this cell
+		uint end_index = cell_end[grid_hash];
+
+		for (uint j = start_index; j < end_index; j++)
+		{
+			float3 pos2 = sorted_pos[j];
+			float3 vec = pos1 - pos2;
+			float dist = length(vec);
+
+			float3 gradientC_j = (1.f / (*rest_density)) *
+				Spiky_W_Gradient_CUDA(vec, dist, params.effective_radius);
+
+			float dot_val = dot(gradientC_j, gradientC_j);
+			gradientC_sum += dot_val;
 		}
 	}
 	return gradientC_sum;
@@ -665,7 +974,7 @@ float3 pbf_correction(
 				//printf("scorr: %f\n", scorr);
 
 				float3 res = //(1.f / (*rest_density)) *
-					(lambda_i + lambda[original_index])*// +scorr)*
+					(lambda_i + lambda[original_index] +scorr)*
 					gradient;
 				
 				correction += res;
@@ -677,53 +986,62 @@ float3 pbf_correction(
 	return correction;
 }
 
-__global__
-void compute_rest_density_d(
-	float*	rest_density,			// output: rest density
-	float3* sorted_pos,				// input: sorted mass
-	float*	mass,					// input: mass
-	uint*	gridParticleIndex,		// input: sorted particle indices
-	uint*	cellStart,
-	uint*	cellEnd,
-	uint	numParticles
-)
+// compute correction from boundary particles
+inline __device__
+float3 pbf_correction_boundary(
+	int3    grid_pos,
+	uint    index,
+	float3  pos,
+	float	lambda_i,
+	float*	rest_density,
+	// boundary
+	CellData b_cell_data,
+	float*	b_lambda,
+	float	dt)
 {
-	uint index = __mul24(blockIdx.x, blockDim.x) + threadIdx.x;
+	uint grid_hash = calcGridHash(grid_pos);
 
-	if (index >= numParticles) return;
+	// get start of bucket for this cell
+	uint start_index = b_cell_data.cellStart[grid_hash];
+	float3 correction = make_float3(0, 0, 0);
 
-	uint originalIndex = gridParticleIndex[index];
-
-	// read particle data from sorted arrays
-	float3 pos = sorted_pos[index];
-
-	// initial density
-	float rho = mass[originalIndex] * Poly6_W_CUDA(0, params.effective_radius);
-
-	// get address in grid
-	int3 gridPos = calcGridPos(pos);
-
-	// traverse 27 neighbors
-	for (int z = -1; z <= 1; z++)
+	if (start_index != 0xffffffff)          // cell is not empty
 	{
-		for (int y = -1; y <= 1; y++)
+		// iterate over particles in this cell
+		uint end_index = b_cell_data.cellEnd[grid_hash];
+
+		for (uint j = start_index; j < end_index; j++)
 		{
-			for (int x = -1; x <= 1; x++)
+			if (j != index)                // check not colliding with self
 			{
-				int3 neighbor_pos = gridPos + make_int3(x, y, z);
-				rho += pbf_density(
-					neighbor_pos, index,
-					pos, sorted_pos, mass,
-					cellStart, cellEnd, gridParticleIndex
-				);
+				uint original_index = b_cell_data.grid_index[j];
+
+				float lambda_j = b_lambda[original_index];
+				float3 pos2 = b_cell_data.sorted_pos[j];
+				float3 vec = pos - pos2;
+				float dist = length(vec);
+
+				float3 gradient = Spiky_W_Gradient_CUDA(vec, dist, params.effective_radius);
+
+				float scorr = -0.1f;
+				float x = Poly6_W_CUDA(dist, params.effective_radius) /
+					Poly6_W_CUDA(0.3f * params.effective_radius, params.effective_radius);
+				x = pow(x, 4);
+				scorr = scorr * x * dt * dt;
+
+				//printf("scorr: %f\n", scorr);
+
+				float3 res = //(1.f / (*rest_density)) *
+					(lambda_i + lambda_j) *// +scorr)*
+					gradient;
+
+				correction += res;
 			}
 		}
+
+		//printf("Num neighbors: %u\n", end_index - start_index);
 	}
-
-	//printf("rho[%u]: %f", index, rho);
-
-	atomicAdd(rest_density, rho/(float)numParticles);
-
+	return correction;
 }
 
 __global__
@@ -736,6 +1054,9 @@ void compute_density_d(
 	uint*	gridParticleIndex,			// input: sorted particle indices
 	uint*	cellStart,
 	uint*	cellEnd,
+	//boundary
+	CellData cell_data,
+	float*	b_volume,
 	uint	numParticles
 	)
 {
@@ -754,7 +1075,7 @@ void compute_density_d(
 	// get address in grid
 	int3 gridPos = calcGridPos(pos);
 
-	// traverse 27 neighbors
+	// traverse 27 neighbors (fluid - fluid)
 	for (int z = -1; z <= 1; z++)
 	{
 		for (int y = -1; y <= 1; y++)
@@ -765,11 +1086,33 @@ void compute_density_d(
 				rho += pbf_density(
 					neighbor_pos, index, 
 					pos, sorted_pos, mass, 
-					cellStart, cellEnd, gridParticleIndex
+					cellStart, cellEnd, gridParticleIndex,
+					0
 				);
 			}
 		}
 	}
+
+	// use gridPos to traverse 27 surrounding grids (fluid - boundary)
+	for (int z = -1; z <= 1; z++)
+	{
+		for (int y = -1; y <= 1; y++)
+		{
+			for (int x = -1; x <= 1; x++)
+			{
+				int3 neighbor_gridPos = gridPos + make_int3(x, y, z);
+				rho += pbf_density_boundary(
+					// fluid
+					neighbor_gridPos,
+					pos, 
+					// boundary
+					b_volume,
+					cell_data
+				);
+			}
+		}
+	}
+
 
 	// Update date density and constraint value
 	density[originalIndex] = rho;
@@ -781,14 +1124,105 @@ void compute_density_d(
 }
 
 __global__
+void compute_boundary_density_d(
+	// fluid
+	float*		rest_density,				// input: rest density
+	float3*		sorted_pos,					// input: sorted pos of fluid particle
+	float*		mass,						// input: mass of fluid paritcle
+	uint*		cellStart,
+	uint*		cellEnd,
+	uint*		gridParticleIndex,			// input: sorted particle indices (for original_index of fluid particles)
+	// boundary
+	CellData	b_cell_data,
+	float*		b_mass,
+	float*		b_volume,
+	float*		b_C,
+	float*		b_density,					// output: boundary density
+	uint		b_numParticles
+)
+{
+	uint index = __mul24(blockIdx.x, blockDim.x) + threadIdx.x;
+
+	if (index >= b_numParticles) return;
+
+	// original index of boundary particle
+	uint originalIndex = b_cell_data.grid_index[index];
+
+	// read position from sorted arrays
+	float3 pos = b_cell_data.sorted_pos[index];
+
+	// initial density 
+	float rho = 0;
+
+	// get address in grid of boundary particles (basically the same as fluid particle)
+	int3 gridPos = calcGridPos(pos);
+
+	// use gridPos to traverse 27 surrounding grids (boundary - boundary)
+	for (int z = -1; z <= 1; z++)
+	{
+		for (int y = -1; y <= 1; y++)
+		{
+			for (int x = -1; x <= 1; x++)
+			{
+				int3 neighbor_gridPos = gridPos + make_int3(x, y, z);
+				rho += pbf_density(
+					neighbor_gridPos, index,
+					pos, b_cell_data.sorted_pos,
+					b_mass,
+					b_cell_data.cellStart,
+					b_cell_data.cellEnd,
+					b_cell_data.grid_index,
+					1,
+					b_volume
+				);
+			}
+		}
+	}
+
+	// use gridPos to traverse 27 surrounding grids (boundary - fluid)
+	for (int z = -1; z <= 1; z++)
+	{
+		for (int y = -1; y <= 1; y++)
+		{
+			for (int x = -1; x <= 1; x++)
+			{
+				int3 neighbor_gridPos = gridPos + make_int3(x, y, z);
+				rho += pbf_boundary_density(
+					// boundary
+					neighbor_gridPos,
+					pos,
+					// fluid
+					mass,
+					sorted_pos,
+					cellStart,
+					cellEnd,
+					gridParticleIndex
+				);
+			}
+		}
+	}
+
+	// Update density of fluid particle
+	b_density[originalIndex] += rho;
+	// **repeated code**
+	// Recompute constraint value of fluid particle
+	b_C[originalIndex] = (b_density[originalIndex] / (*rest_density)) - 1.f;
+}
+
+/* fluid - boundary */
+__global__
 void compute_lambdas_d(
 	float*	lambda,						// output: computed density
 	float*	rest_density,				// input: rest density
 	float3* sorted_pos,					// input: sorted mass
 	float*	C,							// input: contraint
+	float*  mass,
 	uint*	gridParticleIndex,			// input: sorted particle indices
 	uint*	cellStart,
 	uint*	cellEnd,
+	CellData cell_data,
+	
+	float*	b_volume,
 	uint	numParticles
 )
 {
@@ -823,8 +1257,30 @@ void compute_lambdas_d(
 				float res = pbf_lambda(
 					neighbor_pos, index,
 					pos, rest_density,
-					sorted_pos,
-					cellStart, cellEnd, gridParticleIndex
+					mass, sorted_pos,
+					cellStart, cellEnd, 
+					gridParticleIndex,
+					0
+				);
+				gradientC_sum += res;
+			}
+		}
+	}
+
+	// traverse 27 neighbors in "boundary cells"
+	for (int z = -1; z <= 1; z++)
+	{
+		for (int y = -1; y <= 1; y++)
+		{
+			for (int x = -1; x <= 1; x++)
+			{
+				int3 neighbor_pos = gridPos + make_int3(x, y, z);
+				float res = pbf_lambda_boundary(
+					neighbor_pos, 
+					pos, rest_density,
+					mass[originalIndex],  // paritcle_mass
+					cell_data,
+					b_volume
 				);
 				gradientC_sum += res;
 			}
@@ -838,6 +1294,98 @@ void compute_lambdas_d(
 }
 
 __global__
+void compute_boundary_lambdas_d(
+	float* b_lambda,				// lambda of boundary particles
+	float* b_vol,
+	float3* b_pos,
+	float* b_C,
+	float* b_mass,
+	CellData b_cell_data,
+	// Cell data of fluid particles
+	float3* sorted_pos,
+	uint*	gridParticleIndex,			// input: sorted particle indices
+	uint*	cellStart,
+	uint*	cellEnd,
+	float*	rest_density,
+	uint	b_numParticles		// number of boundary particles
+)
+{
+	uint index = __mul24(blockIdx.x, blockDim.x) + threadIdx.x;
+
+	if (index >= b_numParticles) return;
+
+	uint originalIndex = b_cell_data.grid_index[index];
+
+	// read particle data from sorted arrays
+	float3 pos = b_cell_data.sorted_pos[index];
+
+	// initial density
+	b_lambda[originalIndex] = -b_C[originalIndex];
+	float particle_mass = b_mass[originalIndex];
+
+	// get address in grid
+	int3 gridPos = calcGridPos(pos);
+
+	const float epislon = 0.001f;
+	float3 gradientC_i = make_float3(0);
+	//-(1.f / (*rest_density)) *
+	//Poly6_W_Gradient_CUDA(make_float3(0, 0, 0), 0, params.effective_radius);
+	float gradientC_sum = dot(gradientC_i, gradientC_i);
+	
+	// traverse 27 neighbors in boundary cells (boundary - boundary)
+	for (int z = -1; z <= 1; z++)
+	{
+		for (int y = -1; y <= 1; y++)
+		{
+			for (int x = -1; x <= 1; x++)
+			{
+				int3 neighbor_pos = gridPos + make_int3(x, y, z);
+				float res = pbf_lambda(
+					neighbor_pos, index,
+					pos, rest_density,
+					b_mass,
+					b_cell_data.sorted_pos,
+					b_cell_data.cellStart, b_cell_data.cellEnd, b_cell_data.grid_index,
+					1,
+					b_vol
+				);
+				gradientC_sum += res;
+			}
+		}
+	}
+
+	// traverse 27 neighbors in "fluid cells" (boundary - fluid)
+	for (int z = -1; z <= 1; z++)
+	{
+		for (int y = -1; y <= 1; y++)
+		{
+			for (int x = -1; x <= 1; x++)
+			{
+				int3 neighbor_pos = gridPos + make_int3(x, y, z);
+				float res = pbf_boundary_lambda(
+					// boundary
+					neighbor_pos,
+					pos, rest_density,
+					particle_mass,			// paritcle_mass
+					b_vol[originalIndex],	// volume
+					// fluid
+					sorted_pos,
+					cellStart,
+					cellEnd,
+					gridParticleIndex
+				);
+				gradientC_sum += res;
+			}
+		}
+	}
+
+	//printf("gradientC_sum: %f\n", gradientC_sum);
+	b_lambda[originalIndex] /= gradientC_sum + epislon;
+
+	//lambda[originalIndex] = lambda_res;
+}
+
+__global__
 void compute_position_correction(
 	float*	lambda,						// output: computed density
 	float*	rest_density,				// input: rest density
@@ -846,6 +1394,9 @@ void compute_position_correction(
 	uint*	gridParticleIndex,			// input: sorted particle indices
 	uint*	cellStart,
 	uint*	cellEnd,
+	// boundary
+	CellData b_cell_data,
+	float*	b_lambda,
 	uint	numParticles,
 	float	dt
 )
@@ -881,6 +1432,27 @@ void compute_position_correction(
 					pos, lambda_i, rest_density,
 					sorted_pos, lambda,
 					cellStart, cellEnd, gridParticleIndex,
+					dt
+				);
+			}
+		}
+	}
+
+	for (int z = -1; z <= 1; z++)
+	{
+		for (int y = -1; y <= 1; y++)
+		{
+			for (int x = -1; x <= 1; x++)
+			{
+				int3 neighbor_pos = gridPos + make_int3(x, y, z);
+				correction += pbf_correction_boundary(
+					neighbor_pos,
+					index,
+					pos,
+					lambda_i,
+					rest_density,
+					b_cell_data,
+					b_lambda,
 					dt
 				);
 			}
@@ -1028,26 +1600,6 @@ void solve_dem_collision(
 
 }
 
-void compute_rest_density(
-	float* rest_density,			// output: rest density
-	float3* sorted_pos,				// input: sorted mass
-	float* mass,					// input: mass
-	uint* gridParticleIndex,		// input: sorted particle indices
-	uint* cellStart,
-	uint* cellEnd,
-	uint  numParticles
-)
-{
-	uint numThreads, numBlocks;
-	compute_grid_size(numParticles, MAX_THREAD_NUM, numBlocks, numThreads);
-	compute_rest_density_d << <numBlocks, numThreads >> > (
-		rest_density,							// output
-		sorted_pos, mass,						// input particle information
-		gridParticleIndex, cellStart, cellEnd,	// input cell info
-		numParticles		
-		);
-}
-
 void solve_sph_fluid(
 	float3* pos,
 	float3* new_pos,
@@ -1055,16 +1607,24 @@ void solve_sph_fluid(
 	float3* vel,
 	float3* sorted_pos,
 	float3* sorted_vel,
-	float*	mass,
-	float*	density,
-	float*	rest_density,
-	float*	C,
-	float*	lambda,
-	uint*	gridParticleIndex,
-	uint*	cellStart,
-	uint*	cellEnd,
+	float* mass,
+	float* density,
+	float* rest_density,
+	float* C,
+	float* lambda,
+	uint* gridParticleIndex,
+	uint* cellStart,
+	uint* cellEnd,
 	uint	numParticles,
 	uint	numCells,
+	CellData b_cell_data,
+	float3*	 b_pos,
+	float*	 b_mass,
+	float*   b_volume,
+	float*	 b_C,
+	float*	 b_density,
+	float*	 b_lambda,
+	uint     b_num_particles,
 	float	dt)
 {
 	std::chrono::steady_clock::time_point t1, t2, t3, t4, t5;
@@ -1083,20 +1643,60 @@ void solve_sph_fluid(
 			gridParticleIndex,
 			cellStart,
 			cellEnd,
+			b_cell_data,
+			b_volume,
 			numParticles
 			);
+		getLastCudaError("Kernel execution failed: compute_density_d ");
+		// compute density contributed by boundary particles
+		compute_boundary_density_d << <numBlocks, numThreads >> > (
+			rest_density,
+			sorted_pos,
+			mass,
+			cellStart,
+			cellEnd,
+			gridParticleIndex,
+			b_cell_data,
+			b_mass,
+			b_volume,
+			b_C,
+			b_density,
+			b_num_particles
+			);
+		// compute density of bounary particles
+		// compute_boundary_density_d();
+		getLastCudaError("Kernel execution failed: compute_density_boundary_d ");
 		t2 = std::chrono::high_resolution_clock::now();
 		// compute lambda
-		compute_lambdas_d << <numBlocks, numThreads >> > (
+ 		compute_lambdas_d << <numBlocks, numThreads >> > (
 			lambda,
 			rest_density,
 			sorted_pos,
 			C,
+			mass,
 			gridParticleIndex,
 			cellStart,
 			cellEnd,
+			b_cell_data,
+			b_volume,
 			numParticles
 			);
+		getLastCudaError("Kernel execution failed: compute_lambdas_d ");
+		compute_boundary_lambdas_d << <numBlocks, numThreads >> > (
+			b_lambda,
+			b_volume,
+			b_pos,
+			b_C,
+			b_mass,
+			b_cell_data,
+			sorted_pos,
+			gridParticleIndex,
+			cellStart,
+			cellEnd,
+			rest_density,
+			b_num_particles
+		);
+		getLastCudaError("Kernel execution failed: compute_boundary_lambdas_d ");
 		t3 = std::chrono::high_resolution_clock::now();
 		// compute new position
 		compute_position_correction << <numBlocks, numThreads >> > (
@@ -1107,12 +1707,15 @@ void solve_sph_fluid(
 			gridParticleIndex,
 			cellStart,
 			cellEnd,
+			b_cell_data,
+			b_lambda,
 			numParticles,
 			dt
 			);
-
+		getLastCudaError("Kernel execution failed: compute_position_correction ");
 		// correct this iteration
 		apply_correction << <numBlocks, numThreads >> > (new_pos, predict_pos, numParticles);
+		getLastCudaError("Kernel execution failed: apply_correction ");
 
 		t4 = std::chrono::high_resolution_clock::now();
 	}
@@ -1122,6 +1725,7 @@ void solve_sph_fluid(
 		numParticles, 
 		dt
 	);
+	getLastCudaError("Kernel execution failed: finalize_correction ");
 	t5 = std::chrono::high_resolution_clock::now();
 	{
 		ImGui::Begin("CUDA Performance");

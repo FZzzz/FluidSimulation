@@ -54,7 +54,7 @@ void Simulation::Initialize(PBD_MODE mode, std::shared_ptr<ParticleSystem> parti
 #ifdef _USE_CUDA_
 	m_particle_system->InitializeCUDA();
 	m_neighbor_searcher->InitializeCUDA();
-	InitializeBoundaryCellData();
+	InitializeBoundaryCudaData();
 #else
 	m_particle_system->Initialize();
 	m_neighbor_searcher->Initialize();
@@ -151,15 +151,23 @@ bool Simulation::StepCUDA(float dt)
 	std::chrono::steady_clock::time_point t1, t2, t3, t4, t5;
 
 	ParticleSet* particles = m_particle_system->getParticles();
+	ParticleSet* boundary_particles = m_particle_system->getBoundaryParticles();
+
 	cudaGraphicsResource** vbo_resource = m_particle_system->getCUDAGraphicsResource();
+	cudaGraphicsResource** b_vbo_resource = m_particle_system->getBoundaryCUDAGraphicsResource();
+	
 	glm::vec3* positions = particles->m_positions.data();
+
 	unsigned int numParticles = particles->m_size;
+	unsigned int b_numParticles = boundary_particles->m_size;
 
 	// Map vbo to m_d_positinos
 	cudaGraphicsMapResources(1, vbo_resource, 0);
+	cudaGraphicsMapResources(1, b_vbo_resource, 0);
 
 	size_t num_bytes;
 	cudaGraphicsResourceGetMappedPointer((void**)&(particles->m_d_positions), &num_bytes, *vbo_resource);
+	cudaGraphicsResourceGetMappedPointer((void**)&(boundary_particles->m_d_positions), &num_bytes, *b_vbo_resource);
 	
 	// Integrate
 	//integrate(particles->m_d_positions, particles->m_d_velocity, dt, particles->m_size);
@@ -243,9 +251,11 @@ bool Simulation::StepCUDA(float dt)
 		particles->m_d_new_positions, 
 		particles->m_d_predict_positions,
 		particles->m_d_velocity,
-		particles->m_d_sorted_position, particles->m_d_sorted_velocity,
+		particles->m_d_sorted_position, 
+		particles->m_d_sorted_velocity,
 		particles->m_d_mass,
-		particles->m_d_density, m_d_rest_density,
+		particles->m_d_density, 
+		m_d_rest_density,
 		particles->m_d_C,
 		particles->m_d_lambda,
 		m_neighbor_searcher->m_d_grid_particle_index,
@@ -253,6 +263,14 @@ bool Simulation::StepCUDA(float dt)
 		m_neighbor_searcher->m_d_cellEnd,
 		numParticles,
 		m_neighbor_searcher->m_num_grid_cells,
+		m_d_boundary_cell_data,
+		boundary_particles->m_d_positions,
+		boundary_particles->m_d_mass,
+		boundary_particles->m_d_volume,
+		boundary_particles->m_d_C,
+		boundary_particles->m_d_density,
+		boundary_particles->m_d_lambda,
+		b_numParticles,
 		dt
 	);
 	
@@ -268,7 +286,7 @@ bool Simulation::StepCUDA(float dt)
 	
 	// Unmap CUDA buffer object
 	cudaGraphicsUnmapResources(1, vbo_resource, 0);
-
+	cudaGraphicsUnmapResources(1, b_vbo_resource, 0);
 	//m_pause = true;
 
 	return true;
@@ -507,7 +525,7 @@ void Simulation::InitializeBoundaryParticles()
 
 }
 
-void Simulation::InitializeBoundaryCellData()
+void Simulation::InitializeBoundaryCudaData()
 {
 	auto boundary_particles = m_particle_system->getBoundaryParticles();
 	size_t num_particles = boundary_particles->m_size;
@@ -527,7 +545,7 @@ void Simulation::InitializeBoundaryCellData()
 
 	size_t num_bytes;
 	cudaGraphicsResourceGetMappedPointer((void**)&(boundary_particles->m_d_positions), &num_bytes, *vbo_resource);
-
+	std::cout << "num_bytes " << num_bytes << std::endl;
 	// Precompute hash
 	calculate_hash_boundary(m_d_boundary_cell_data, boundary_particles->m_d_positions, num_particles);
 	// Sort
@@ -539,6 +557,16 @@ void Simulation::InitializeBoundaryCellData()
 		num_particles,
 		m_neighbor_searcher->m_num_grid_cells
 	);
+
+	
+	// Compute boundary particle volume
+	compute_boundary_volume(
+		m_d_boundary_cell_data,
+		boundary_particles->m_d_mass,
+		boundary_particles->m_d_volume,
+		num_particles
+	);
+	
 
 	// Unmap CUDA buffer object
 	cudaGraphicsUnmapResources(1, vbo_resource, 0);

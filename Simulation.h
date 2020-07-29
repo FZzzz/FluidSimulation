@@ -89,7 +89,7 @@ private:
 	void SetupSimParams();
 
 	void InitializeBoundaryParticles();
-	void InitializeBoundaryCellData();
+	void InitializeBoundaryCudaData();
 	void GenerateFluidCube();
 
 	void PredictPositions(float dt);

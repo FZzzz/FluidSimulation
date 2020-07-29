@@ -77,6 +77,14 @@ void reorderData_boundary(
     uint	numCells
     );
 
+void compute_boundary_volume(
+    CellData data,
+    float* mass,
+    float* volume,          // output: volume of particle
+    uint numParticles
+);
+
+
 void solve_dem_collision(
     float3* newVel,
     float3* sortedPos,
@@ -89,34 +97,32 @@ void solve_dem_collision(
     float dt
 );
 
-void compute_rest_density(
-    float* rest_density,					// output: computed density
-    float3* sorted_pos,				// input: sorted mass
-    float* mass,					// input: mass
-    uint* gridParticleIndex,		// output: sorted particle indices
-    uint* cellStart,
-    uint* cellEnd,
-    uint  numParticles
-);
-
 void solve_sph_fluid(
-    float3* pos,
-    float3* new_pos,
-    float3* predict_pos,
-    float3* vel,
-    float3* sorted_pos,
-    float3* sorted_vel,
-    float* mass,
-    float* density,
-    float* rest_density,
-    float* C,
-    float* lambda,
-    uint* gridParticleIndex,
-    uint* cellStart,
-    uint* cellEnd,
-    uint	numParticles,
-    uint	numCells,
-    float	dt
+    float3*  pos,
+    float3*  new_pos,
+    float3*  predict_pos,
+    float3*  vel,
+    float3*  sorted_pos,
+    float3*  sorted_vel,
+    float*   mass,
+    float*   density,
+    float*   rest_density,
+    float*   C,
+    float*   lambda,
+    uint*    gridParticleIndex,
+    uint*    cellStart,
+    uint*    cellEnd,
+    uint	 numParticles,
+    uint	 numCells,
+    CellData b_cell_data,
+    float3*  b_pos,
+    float*   b_mass,
+    float*   b_volume,
+    float*   b_C,
+    float*   b_density,
+    float*   b_lambda,
+    uint     b_num_particles,
+    float    dt
 );
 
 

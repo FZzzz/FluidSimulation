@@ -1,6 +1,7 @@
 #version 410
 
 in vec3 light_dir;
+in vec3 vertex_point_color;
 
 uniform mat4 view;
 
@@ -19,6 +20,6 @@ void main()
     /*transform with modelview matrix*/
     //vec3 m = normalize(gl_NormalMatrix * n);
     float diffuse = dot(light_dir, n);
-    frag_color.xyz = vec3(diffuse);
+    frag_color.xyz = diffuse * vertex_point_color;
     frag_color.w = 1.f;
 }

@@ -115,6 +115,7 @@ void Renderer::RenderParticles()
 	shader->SetUniformFloat("point_size", 3.f);
 	shader->SetUniformVec3("light_pos", m_mainCamera->m_position);
 	shader->SetUniformMat4("view", m_mainCamera->m_lookAt);
+	shader->SetUniformVec3("point_color", glm::vec3(0.8f, 0.8f, 1.f));
 	glBindVertexArray(m_particle_system->getVAO());
 	glBindBuffer(GL_ARRAY_BUFFER, m_particle_system->getVBO());
 	glEnableVertexAttribArray(0);
@@ -128,6 +129,9 @@ void Renderer::RenderParticles()
 #ifdef _RENDER_BOUNDARY_
 	// render boundary particles
 	const ParticleSet* const boundary_particles = m_particle_system->getBoundaryParticles();
+
+	shader->SetUniformVec3("point_color", glm::vec3(1.f, 1.f, 1.f));
+
 	glBindVertexArray(m_particle_system->getBoundaryVAO());
 	glBindBuffer(GL_ARRAY_BUFFER, m_particle_system->getBoundaryVBO());
 	glEnableVertexAttribArray(0);

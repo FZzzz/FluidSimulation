@@ -359,6 +359,7 @@ void ParticleSet::ResetPositions(std::vector<glm::vec3> positions, float particl
 	m_density.resize(m_size, 0.f);
 	m_C.resize(m_size, 0.f);
 	m_lambda.resize(m_size, 0.f);
+	m_volume.resize(m_size, 0.f);
 }
 
 void ParticleSet::EraseTail(size_t start)

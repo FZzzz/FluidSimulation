@@ -176,8 +176,6 @@ void ParticleSystem::SetupCUDAMemory()
 		(void**)&(m_particles->m_d_lambda),
 			n * sizeof(float)
 			);
-
-
 		cudaMalloc(
 		(void**)&(m_particles->m_d_sorted_position),
 			n * sizeof(float3)
@@ -270,6 +268,7 @@ void ParticleSystem::SetupCUDAMemory()
 		float* density = m_boundary_particles->m_density.data();
 		float* C = m_boundary_particles->m_C.data();
 		float* lambda = m_boundary_particles->m_lambda.data();
+		float* volume = m_boundary_particles->m_volume.data();
 
 		size_t n = m_boundary_particles->m_size;
 
@@ -293,6 +292,10 @@ void ParticleSystem::SetupCUDAMemory()
 		);
 		cudaMalloc(
 			(void**)&(m_boundary_particles->m_d_lambda),
+			n * sizeof(float)
+		);
+		cudaMalloc(
+			(void**)&(m_boundary_particles->m_d_volume),
 			n * sizeof(float)
 		);
 
@@ -324,6 +327,12 @@ void ParticleSystem::SetupCUDAMemory()
 		cudaMemcpy(
 			(void*)m_boundary_particles->m_d_lambda,
 			(void*)lambda,
+			n * sizeof(float),
+			cudaMemcpyHostToDevice
+		);
+		cudaMemcpy(
+			(void*)m_boundary_particles->m_d_volume,
+			(void*)volume,
 			n * sizeof(float),
 			cudaMemcpyHostToDevice
 		);
