@@ -661,6 +661,7 @@ float pbf_density(
 	float3  pos,
 	float3* sorted_pos,
 	float*	mass,
+	float*	rest_density,
 	uint*	cell_start,
 	uint*	cell_end,
 	uint*	gridParticleIndex,
@@ -691,7 +692,7 @@ float pbf_density(
 				if(type == 0)
 					rho = mass[original_index] * Poly6_W_CUDA(dist, params.effective_radius);
 				else if (type == 1)
-					rho = b_volume[original_index] * Poly6_W_CUDA(dist, params.effective_radius);
+					rho = (*rest_density) * b_volume[original_index] * Poly6_W_CUDA(dist, params.effective_radius);
 
 				density += rho;
 			}
@@ -705,6 +706,7 @@ inline __device__
 float pbf_density_boundary(
 	int3    grid_pos,
 	float3  pos1,
+	float* rest_density,
 	float* volume,
 	CellData cell_data
 )
@@ -730,7 +732,7 @@ float pbf_density_boundary(
 			float3 vec = pos1 - pos2;
 			float dist = length(vec);
 
-			float rho = volume[original_index] * Poly6_W_CUDA(dist, params.effective_radius);
+			float rho = (*rest_density) * volume[original_index] * Poly6_W_CUDA(dist, params.effective_radius);
 
 			density += rho;	
 		}
@@ -824,14 +826,14 @@ float pbf_lambda(
 				if (type == 0) // fluid - fluid
 				{
 					gradientC_j = (1.f / (*rest_density)) *
-						Spiky_W_Gradient_CUDA(vec, dist, params.effective_radius);
+						Poly6_W_Gradient_CUDA(vec, dist, params.effective_radius);
 				}
 				else if (type == 1) // boundary - boundary
 				{
 					float vol = b_volume[original_index];
 					float3 gradientC_j = (1.f / (*rest_density)) *
 						((*rest_density) * vol / particle_mass) *
-						Spiky_W_Gradient_CUDA(vec, dist, params.effective_radius);
+						Poly6_W_Gradient_CUDA(vec, dist, params.effective_radius);
 				}
 
 				float dot_val = dot(gradientC_j, gradientC_j);
@@ -875,7 +877,7 @@ float pbf_lambda_boundary(
 
 			float3 gradientC_j = (1.f / (*rest_density)) * 
 				((*rest_density) * vol / particle_mass) *  
-				Spiky_W_Gradient_CUDA(vec, dist, params.effective_radius);
+				Poly6_W_Gradient_CUDA(vec, dist, params.effective_radius);
 
 			float dot_val = dot(gradientC_j, gradientC_j);
 			gradientC_sum += dot_val;
@@ -919,7 +921,7 @@ float pbf_boundary_lambda(
 			float dist = length(vec);
 
 			float3 gradientC_j = (1.f / (*rest_density)) *
-				Spiky_W_Gradient_CUDA(vec, dist, params.effective_radius);
+				Poly6_W_Gradient_CUDA(vec, dist, params.effective_radius);
 
 			float dot_val = dot(gradientC_j, gradientC_j);
 			gradientC_sum += dot_val;
@@ -963,13 +965,13 @@ float3 pbf_correction(
 				float3 vec = pos - pos2;
 				float dist = length(vec);
 
-				float3 gradient = Spiky_W_Gradient_CUDA(vec, dist, params.effective_radius);
+				float3 gradient = Poly6_W_Gradient_CUDA(vec, dist, params.effective_radius);
 				
 				float scorr = -0.1f;
 				float x = Poly6_W_CUDA(dist, params.effective_radius) / 
 					Poly6_W_CUDA(0.3f * params.effective_radius, params.effective_radius);
 				x = pow(x, 4);
-				scorr = scorr * x * dt * dt;
+				scorr = scorr * x * dt * dt * dt;
 				
 				//printf("scorr: %f\n", scorr);
 
@@ -1021,7 +1023,7 @@ float3 pbf_correction_boundary(
 				float3 vec = pos - pos2;
 				float dist = length(vec);
 
-				float3 gradient = Spiky_W_Gradient_CUDA(vec, dist, params.effective_radius);
+				float3 gradient = Poly6_W_Gradient_CUDA(vec, dist, params.effective_radius);
 
 				float scorr = -0.1f;
 				float x = Poly6_W_CUDA(dist, params.effective_radius) /
@@ -1086,6 +1088,7 @@ void compute_density_d(
 				rho += pbf_density(
 					neighbor_pos, index, 
 					pos, sorted_pos, mass, 
+					rest_density,
 					cellStart, cellEnd, gridParticleIndex,
 					0
 				);
@@ -1105,6 +1108,7 @@ void compute_density_d(
 					// fluid
 					neighbor_gridPos,
 					pos, 
+					rest_density,
 					// boundary
 					b_volume,
 					cell_data
@@ -1152,7 +1156,7 @@ void compute_boundary_density_d(
 	float3 pos = b_cell_data.sorted_pos[index];
 
 	// initial density 
-	float rho = 0;
+	float rho = (*rest_density) * b_volume[originalIndex] * Poly6_W_CUDA(0, params.effective_radius);
 
 	// get address in grid of boundary particles (basically the same as fluid particle)
 	int3 gridPos = calcGridPos(pos);
@@ -1169,6 +1173,7 @@ void compute_boundary_density_d(
 					neighbor_gridPos, index,
 					pos, b_cell_data.sorted_pos,
 					b_mass,
+					rest_density,
 					b_cell_data.cellStart,
 					b_cell_data.cellEnd,
 					b_cell_data.grid_index,
@@ -1203,7 +1208,7 @@ void compute_boundary_density_d(
 	}
 
 	// Update density of fluid particle
-	b_density[originalIndex] += rho;
+	b_density[originalIndex] = rho;
 	// **repeated code**
 	// Recompute constraint value of fluid particle
 	b_C[originalIndex] = (b_density[originalIndex] / (*rest_density)) - 1.f;
@@ -1631,7 +1636,7 @@ void solve_sph_fluid(
 	uint numThreads, numBlocks;
 	compute_grid_size(numParticles, MAX_THREAD_NUM, numBlocks, numThreads);
 
-	for (int i = 0; i < 1; ++i)
+	for (int i = 0; i < 4; ++i)
 	{
 		// CUDA SPH Kernel
 		// compute density

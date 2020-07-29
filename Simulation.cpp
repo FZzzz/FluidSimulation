@@ -355,7 +355,7 @@ void Simulation::setGravity(float gravity)
 void Simulation::SetupSimParams()
 {
 	//const size_t n_particles = 1000;
-	const float particle_mass = 0.05f;
+	const float particle_mass = 0.025f;
 	const float n_kernel_particles = 20.f;	
 	// water density = 1000 kg/m^3
 	m_rest_density = 1000.f; 
@@ -373,7 +373,7 @@ void Simulation::SetupSimParams()
 	std::cout << "Particle radius: " << particle_radius << std::endl;
 
 	m_sim_params = new SimParams();
-	m_sim_params->gravity = make_float3(0.f, -9.81f, 0.f);
+	m_sim_params->gravity = make_float3(0.f, -9.8f, 0.f);
 	m_sim_params->global_damping = 0.99f;
 	m_sim_params->particle_radius = particle_radius;
 	m_sim_params->effective_radius = effective_radius;
@@ -441,7 +441,7 @@ void Simulation::InitializeBoundaryParticles()
 
 	left_margin -= diameter;
 	right_margin += diameter;
-
+	/*
 	nx = static_cast<int>(half_extend2.x / diameter);
 	ny = static_cast<int>(half_extend2.y / diameter);
 	nz = static_cast<int>(half_extend2.z / diameter);
@@ -519,6 +519,7 @@ void Simulation::InitializeBoundaryParticles()
 			}
 		}
 	}
+	*/
 
 	std::cout << "Boundary particles: " << idx << std::endl;
 	particles->ResetPositions(positions, m_particle_mass);
@@ -545,7 +546,7 @@ void Simulation::InitializeBoundaryCudaData()
 
 	size_t num_bytes;
 	cudaGraphicsResourceGetMappedPointer((void**)&(boundary_particles->m_d_positions), &num_bytes, *vbo_resource);
-	std::cout << "num_bytes " << num_bytes << std::endl;
+	//std::cout << "num_bytes " << num_bytes << std::endl;
 	// Precompute hash
 	calculate_hash_boundary(m_d_boundary_cell_data, boundary_particles->m_d_positions, num_particles);
 	// Sort
@@ -579,7 +580,7 @@ void Simulation::GenerateFluidCube()
 	// number of particles on x,y,z
 	int nx, ny, nz;
 	// fluid cube extends
-	glm::vec3 half_extend(0.5f, 1.5f, 0.5f);
+	glm::vec3 half_extend(0.3f, 0.3f, 0.3f);
 	
 	nx = static_cast<int>(half_extend.x / diameter);
 	ny = static_cast<int>(half_extend.y / diameter);
@@ -603,7 +604,7 @@ void Simulation::GenerateFluidCube()
 			{
 				//int idx = k + j * 10 + i * 100;
 				x = 0.f   + diameter * static_cast<float>(i);
-				y = 1.51f + diameter * static_cast<float>(j);
+				y = 0.7f + diameter * static_cast<float>(j);
 				z = -0.f  + diameter * static_cast<float>(k);
 				glm::vec3 pos(x, y, z);
 				particles->m_positions[idx] = pos;
@@ -613,7 +614,7 @@ void Simulation::GenerateFluidCube()
 			}
 		}
 	}
-	std::cout << "idx " << idx << std::endl;
+	//std::cout << "idx " << idx << std::endl;
 
 }
 
