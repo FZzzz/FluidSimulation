@@ -441,7 +441,7 @@ void Simulation::InitializeBoundaryParticles()
 
 	left_margin -= diameter;
 	right_margin += diameter;
-	/*
+	
 	nx = static_cast<int>(half_extend2.x / diameter);
 	ny = static_cast<int>(half_extend2.y / diameter);
 	nz = static_cast<int>(half_extend2.z / diameter);
@@ -519,7 +519,7 @@ void Simulation::InitializeBoundaryParticles()
 			}
 		}
 	}
-	*/
+	
 
 	std::cout << "Boundary particles: " << idx << std::endl;
 	particles->ResetPositions(positions, m_particle_mass);
@@ -580,7 +580,7 @@ void Simulation::GenerateFluidCube()
 	// number of particles on x,y,z
 	int nx, ny, nz;
 	// fluid cube extends
-	glm::vec3 half_extend(0.3f, 0.3f, 0.3f);
+	glm::vec3 half_extend(0.5f, 0.5f, 0.5f);
 	
 	nx = static_cast<int>(half_extend.x / diameter);
 	ny = static_cast<int>(half_extend.y / diameter);
