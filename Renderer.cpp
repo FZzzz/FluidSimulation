@@ -105,6 +105,7 @@ void Renderer::RenderParticles()
 	// fluid particles
 	const ParticleSet* const particles = m_particle_system->getParticles();
 	const std::shared_ptr<Shader> shader = m_resource_manager->FindShaderByName("PointSprite");
+	
 #ifdef _DEBUG
 	assert(shader);
 #endif
@@ -112,8 +113,9 @@ void Renderer::RenderParticles()
 
 	const glm::mat4 pvm = m_mainCamera->m_cameraMat * glm::mat4(1);
 	shader->SetUniformMat4("pvm", pvm);
-	shader->SetUniformFloat("point_size", 3.f);
+	shader->SetUniformFloat("point_size", 30.f);
 	shader->SetUniformVec3("light_pos", m_mainCamera->m_position);
+	shader->SetUniformVec3("camera_pos", m_mainCamera->m_position);
 	shader->SetUniformMat4("view", m_mainCamera->m_lookAt);
 	shader->SetUniformVec3("point_color", glm::vec3(0.8f, 0.8f, 1.f));
 	glBindVertexArray(m_particle_system->getVAO());

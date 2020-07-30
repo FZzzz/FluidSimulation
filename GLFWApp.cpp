@@ -137,8 +137,8 @@ bool GLFWApp::Initialize(int width , int height , const std::string &title)
 		camera_desc.screen_height = f_height;
 		camera_desc.near_plane = 0.001f;
 		camera_desc.far_plane = 1000.0f;
-		camera_desc.position = glm::vec3(0.0f, 1.0f, 3.0f);
-		camera_desc.target_position = glm::vec3(0, camera_desc.position.y, 0);
+		camera_desc.position = glm::vec3(0.0f, 2.0f, 4.0f);
+		camera_desc.target_position = glm::vec3(0, 0, 0);
 		camera_desc.projection = glm::perspective(camera_desc.fov, f_width / f_height, 0.1f, 1000.0f);
 		camera_desc.lookAt = glm::lookAt(camera_desc.position, camera_desc.target_position, glm::vec3(0.0f, 1.0f, 0.0f));
 		camera_desc.ubo = ubo;
@@ -332,7 +332,7 @@ void GLFWApp::Update()
 	
 	float dt = m_currentTime - m_previousTime;
 
-	const float time_step = 0.00025f;
+	const float time_step = 0.0005f;
 #ifdef _USE_CUDA_
 	m_simulator->StepCUDA(time_step);
 #else

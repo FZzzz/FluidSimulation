@@ -289,6 +289,12 @@ bool Simulation::StepCUDA(float dt)
 	cudaGraphicsUnmapResources(1, b_vbo_resource, 0);
 	//m_pause = true;
 
+	static int count = 0;
+	if(!m_pause) count++;
+	if (count == 5000)
+		m_pause = true, count = 0;
+
+
 	return true;
 }
 
@@ -387,6 +393,7 @@ void Simulation::SetupSimParams()
 	m_sim_params->attraction = 0.0f;
 	m_sim_params->boundary_damping = 1.0f;
 
+	m_particle_system->setParticleRadius(particle_radius);
 	setParams(m_sim_params);
 }
 
@@ -580,7 +587,7 @@ void Simulation::GenerateFluidCube()
 	// number of particles on x,y,z
 	int nx, ny, nz;
 	// fluid cube extends
-	glm::vec3 half_extend(0.5f, 0.5f, 0.5f);
+	glm::vec3 half_extend(0.5f, 0.4f, 0.5f);
 	
 	nx = static_cast<int>(half_extend.x / diameter);
 	ny = static_cast<int>(half_extend.y / diameter);
@@ -603,8 +610,8 @@ void Simulation::GenerateFluidCube()
 			for (int k = -nz; k < nz; ++k)
 			{
 				//int idx = k + j * 10 + i * 100;
-				x = 0.f   + diameter * static_cast<float>(i);
-				y = 0.7f + diameter * static_cast<float>(j);
+				x = 0.0f   + diameter * static_cast<float>(i);
+				y = 1.0f + diameter * static_cast<float>(j);
 				z = -0.f  + diameter * static_cast<float>(k);
 				glm::vec3 pos(x, y, z);
 				particles->m_positions[idx] = pos;

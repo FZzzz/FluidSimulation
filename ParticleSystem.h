@@ -25,6 +25,7 @@ public:
 	ParticleSet* AllocateBoundaryParticles();
 
 	//void setParticles(std::vector<std::shared_ptr<Particle>> particles);
+	void setParticleRadius(float particle_radius);
 
 	inline ParticleSet* getParticles() { return m_particles; };
 	inline ParticleSet* getBoundaryParticles() { return m_boundary_particles; };
@@ -42,6 +43,7 @@ public:
 
 	inline double& getUpdateTime() { return m_update_elased_time; };
 
+	inline float getParticleRadius() { return m_particle_radius; };
 
 private:
 	
@@ -59,7 +61,7 @@ private:
 	std::vector<unsigned int> m_particle_indices;
 	std::vector<unsigned int> m_boundary_particle_indices;
 	
-	GLfloat m_point_sprite_size;
+	float m_particle_radius;
 
 	GLuint m_vao;
 	GLuint m_vbo;

@@ -8,7 +8,7 @@ ParticleSystem::ParticleSystem() :
 	m_particles(nullptr),
 	m_boundary_particles(nullptr),
 	//m_particles(nullptr),
-	m_point_sprite_size(5.f),
+	m_particle_radius(5.f),
 	m_vao(-1),
 	m_vbo(-1),
 	m_ebo(-1)
@@ -108,6 +108,11 @@ ParticleSet* ParticleSystem::AllocateBoundaryParticles()
 {
 	m_boundary_particles = new ParticleSet();
 	return m_boundary_particles;
+}
+
+void ParticleSystem::setParticleRadius(float point_radius)
+{
+	m_particle_radius = point_radius;
 }
 
 void ParticleSystem::SetupCUDAMemory()
