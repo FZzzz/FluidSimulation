@@ -34,15 +34,22 @@ public:
 			appInstance = new GLFWApp();
 		return appInstance; 
 	};
+
+	inline GLFWwindow* getGLFWwindow() { return m_window; };
 	inline std::shared_ptr<ResourceManager> getResourceManager() { return m_resource_manager; }
 	inline std::shared_ptr<GUIManager> getGUIManager() { return m_gui_manager; }
 	inline const std::shared_ptr<Renderer> getRenderer() { return m_renderer; }
 	inline const std::shared_ptr<Simulation> getSimulator() { return m_simulator; }
+	inline const std::shared_ptr<Camera> getMainCamera() { return m_mainCamera; };
 	inline bool GetAppStatus() { return m_app_status; };
 	
 	/*virtual functions*/
 	virtual float getElapsedTime();
 
+	/* Mouse controls */
+	float m_mouse_last_x;
+	float m_mouse_last_y;
+	bool m_mouse_pressed;
 
 private:
 	
@@ -59,7 +66,6 @@ private:
 	GLFWcursor* m_mouseCursors[ImGuiMouseCursor_COUNT];
 
 	double m_previousTime , m_currentTime , m_deltaTime;
-	int m_frames_proccessed;
 	char m_glsl_version[32];
 	
 	/*Importer*/
@@ -79,6 +85,7 @@ private:
 	/*Simulation*/
 	std::shared_ptr<Simulation> m_simulator;
 	std::shared_ptr<ParticleSystem> m_particle_system;
+
 
 	/*GUIs*/
 	//void Frame_Status_GUI();

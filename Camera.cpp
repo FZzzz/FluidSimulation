@@ -1,11 +1,10 @@
 #include "Camera.h"
-#include <glm/gtc/matrix_transform.hpp>
-#include <glm/gtc/type_ptr.hpp>
+#include "common.h"
 #include <iostream>
+#include "util.h"
+#include "imgui/imgui.h"
 
 Camera::Camera(CameraDesc desc) : 
-	m_projection(desc.projection),
-	m_lookAt(desc.lookAt),
 	m_position(desc.position),
 	m_fov(desc.fov),
 	m_screen_width(desc.screen_width),
@@ -13,10 +12,18 @@ Camera::Camera(CameraDesc desc) :
 	m_near_plane(desc.near_plane),
 	m_far_plane(desc.far_plane),
 	m_camera_ubo(desc.ubo),
-	m_rotate_radius(m_position.z),
-	m_camera_height(m_position.y),
 	m_target_position(desc.target_position)
 {
+	m_rotate_radius = glm::distance(m_position, m_target_position);
+
+	m_front = glm::normalize( m_target_position - m_position);
+	glm::mat4 vec_rot = glm::toMat4(RotateBetweenVectors(m_front, glm::vec3(0, 0, -1)));
+
+	m_right = glm::normalize(glm::vec3(vec_rot * glm::vec4(1, 0, 0, 1)));
+	m_up = glm::normalize(glm::cross(m_right, m_front));
+
+	m_projection = glm::perspective(m_fov, m_screen_width / m_screen_height, m_near_plane, m_far_plane);
+	m_lookAt = glm::lookAt(m_position, m_target_position, m_up);
 }
 
 Camera::Camera(glm::mat4 projection, glm::mat4 lookAt, glm::vec3 position, GLuint ubo)
@@ -34,24 +41,22 @@ Camera::~Camera()
 {
 }
 
-void Camera::Zoom(float change)
-{
-	//fov += change;
-	//projection = glm::perspective(fov, screen_width / screen_height, 0.1f, 100.0f);
-	m_rotate_radius += change;
-	m_position = glm::vec3(m_rotate_radius * glm::sin(m_theta), m_camera_height, m_rotate_radius * glm::cos(m_theta));
-	m_lookAt = glm::lookAt(m_position, m_target_position, glm::vec3(0.0f, 1.0f, 0.0f));
-}
-
-void Camera::Rotate(float change)
-{
-	this->m_theta += change;
-	m_position = glm::vec3(m_rotate_radius * glm::sin(m_theta), m_camera_height, m_rotate_radius * glm::cos(m_theta));
-	m_lookAt = glm::lookAt(m_position, m_target_position, glm::vec3(0.0f, 1.0f, 0.0f));
-}
-
 void Camera::Update()
 {
+	/* 
+	//Recompute front-right-up (Bug :<)
+	m_front = glm::normalize(m_target_position - m_position);
+
+	 glm::mat4 vec_rot = glm::toMat4(RotateBetweenVectors(m_front, glm::vec3(0, 0, -1)));
+
+	m_right = glm::normalize(glm::vec3(vec_rot * glm::vec4(1, 0, 0, 1)));
+	m_up = glm::normalize(glm::cross(m_right, m_front));
+	*/
+
+	m_lookAt = glm::lookAt(m_position, m_target_position, glm::vec3(0,1,0));
+
+	m_cameraMat = m_projection * m_lookAt;
+	
 	if (m_camera_ubo != -1)
 	{
 		glBindBuffer(GL_UNIFORM_BUFFER, m_camera_ubo);
@@ -67,9 +72,15 @@ void Camera::Update()
 			glm::value_ptr(m_lookAt));
 		glBindBuffer(GL_UNIFORM_BUFFER, 0);
 	}
+	
+	{
+		ImGui::Begin("Camera");
+		ImGui::Text("Front:  %f, %f, %f", m_front.x, m_front.y, m_front.z);
+		ImGui::Text("Right:  %f, %f, %f", m_right.x, m_right.y, m_right.z);
+		ImGui::Text("Up:     %f, %f, %f", m_up.x, m_up.y, m_up.z);
+		ImGui::End();
+	}
 
-	m_cameraMat = m_projection * m_lookAt;
-		
 	/*
 	if (!lock_on_mode)
 		return;
@@ -82,4 +93,25 @@ void Camera::Update()
 
 	lookAt = glm::lookAt(position , position + front , camUp);
 	*/
+}
+
+void Camera::Rotate(float phi_change, float theta_change)
+{
+	m_phi += phi_change;
+	m_theta += theta_change;
+
+	if (m_phi > 0.49f * M_PI)
+		m_phi = 0.49f * M_PI;
+	if (m_phi < -0.49f * M_PI)
+		m_phi = -0.49f * M_PI;
+
+	if (m_theta > 0.49f * M_PI)
+		m_theta = 0.49f * M_PI;
+	if (m_theta < 0)
+		m_theta = 0;
+
+
+	m_position.x = m_target_position.x + m_rotate_radius * glm::cos(m_theta) * glm::sin(m_phi);
+	m_position.y = m_target_position.y + m_rotate_radius * glm::sin(m_theta);
+	m_position.z = m_target_position.z + m_rotate_radius * glm::cos(m_theta) * glm::cos(m_phi) ;
 }

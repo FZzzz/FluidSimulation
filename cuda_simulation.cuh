@@ -94,7 +94,7 @@ void solve_dem_collision(
     uint* cellEnd,
     uint   numParticles,
     uint   numCells,
-    float dt
+    float dt  
 );
 
 void solve_sph_fluid(

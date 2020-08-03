@@ -19,14 +19,18 @@
 
 void Error_callback(int error, const char* description);
 void Key_callback(GLFWwindow* window, int key, int scancode, int action, int mods);
+void Mouse_button_callback(GLFWwindow* window, int button, int action, int mods);
+void Mouse_cursor_callback(GLFWwindow* window, double xpos, double ypos);
+
+
 void Frame_Status_GUI();
 void Object_Viewer_GUI();
+void Mouse_Position_GUI();
 
 GLFWApp* GLFWApp::appInstance;
 
 GLFWApp::GLFWApp() : 
-	m_frames_proccessed(0) , 
-	m_previousTime(0) , 
+	m_previousTime(0), 
 	m_currentTime(0), 
 	m_glsl_version("#version 150"),
 	m_app_status(true),
@@ -74,6 +78,8 @@ bool GLFWApp::Initialize(int width , int height , const std::string &title)
 	glfwSetWindowPos(m_window, 100, 100);
 	glfwMakeContextCurrent(m_window);
 	glfwSetKeyCallback(m_window, Key_callback);
+	glfwSetMouseButtonCallback(m_window, Mouse_button_callback);
+	glfwSetCursorPosCallback(m_window, Mouse_cursor_callback);
 	glfwSwapInterval(0);
 
 	// Initialize glew
@@ -137,10 +143,8 @@ bool GLFWApp::Initialize(int width , int height , const std::string &title)
 		camera_desc.screen_height = f_height;
 		camera_desc.near_plane = 0.001f;
 		camera_desc.far_plane = 1000.0f;
-		camera_desc.position = glm::vec3(0.0f, 2.0f, 4.0f);
+		camera_desc.position = glm::vec3(0.0f, 0.0f, 5.0f);
 		camera_desc.target_position = glm::vec3(0, 0, 0);
-		camera_desc.projection = glm::perspective(camera_desc.fov, f_width / f_height, 0.1f, 1000.0f);
-		camera_desc.lookAt = glm::lookAt(camera_desc.position, camera_desc.target_position, glm::vec3(0.0f, 1.0f, 0.0f));
 		camera_desc.ubo = ubo;
 
 		//Main Camera setting
@@ -201,6 +205,7 @@ bool GLFWApp::Initialize(int width , int height , const std::string &title)
 	m_gui_manager = std::make_shared<GUIManager>();
 	m_gui_manager->Initialize(m_window);
 	m_gui_manager->AddGUIFunction(std::bind(Frame_Status_GUI));
+	m_gui_manager->AddGUIFunction(std::bind(Mouse_Position_GUI));
 	//m_gui_manager->AddGUIFunction(std::bind(Object_Viewer_GUI));
 	//m_gui_manager->AddGUIFunction(std::bind(Animated_Character_GUI));
 	
@@ -286,33 +291,78 @@ void Key_callback(GLFWwindow* window, int key, int scancode, int action, int mod
 	}
 	else if (action == GLFW_REPEAT)
 	{
+		auto camera = instance->getMainCamera();
 		switch (key)
 		{
 		case GLFW_KEY_UP:
 		{
-			camera->Zoom(-0.25f);
+			camera->Rotate(0.0f, 0.03f);
 			break;
 		}
-
 		case GLFW_KEY_DOWN:
 		{
-			camera->Zoom(0.25f);
+			camera->Rotate(0.0f, -0.03f);
+			break;
+		}
+		case GLFW_KEY_LEFT:
+		{
+			camera->Rotate(-0.03f, 0.0f);
 			break;
 		}
 		case GLFW_KEY_RIGHT:
 		{
-			camera->Rotate(0.2f / 30.0f);
+			camera->Rotate(0.03f, 0.0f);
 			break;
 		}
 
-		case GLFW_KEY_LEFT:
-		{
-			camera->Rotate(-0.2f / 30.0f);
-			break;
-		}
 		}
 	}
 
+}
+
+void Mouse_button_callback(GLFWwindow* window, int button, int action, int mods)
+{
+	static GLFWApp* const instance = GLFWApp::getInstance();
+	
+	double x_pos, y_pos;
+
+	glfwGetCursorPos(window, &x_pos, &y_pos);
+
+	/* record last mouse position when press mouse right button */
+	if (button == GLFW_MOUSE_BUTTON_RIGHT)
+	{
+		if (action == GLFW_PRESS)
+		{
+			instance->m_mouse_last_x = static_cast<float>(x_pos);
+			instance->m_mouse_last_y = static_cast<float>(y_pos);
+			instance->m_mouse_pressed = true;
+
+		}
+		else if (action == GLFW_RELEASE)
+		{
+			instance->m_mouse_pressed = false;
+		}
+	}
+
+}
+
+void Mouse_cursor_callback(GLFWwindow* window, double xpos, double ypos)
+{
+	auto instance = GLFWApp::getInstance();
+	if (instance->m_mouse_pressed)
+	{
+		auto camera = instance->getMainCamera();
+
+		float x_change = -0.0005f * static_cast<float>(xpos - instance->m_mouse_last_x);
+		float y_change = 0.0005f * static_cast<float>(ypos - instance->m_mouse_last_y);
+
+		camera->Rotate(x_change, y_change);
+
+		instance->m_mouse_last_x = xpos;
+		instance->m_mouse_last_y = ypos;
+	}
+
+	
 }
 
 void GLFWApp::Render()
@@ -455,5 +505,20 @@ void Object_Viewer_GUI()
 	
 	update_count++;
 	ImGui::End();
+}
+
+void Mouse_Position_GUI()
+{
+	auto instance = GLFWApp::getInstance();
+	
+	double xpos, ypos;
+	glfwGetCursorPos(instance->getGLFWwindow(), &xpos, &ypos);
+
+	{
+		ImGui::Begin("Mouse");
+		ImGui::Text("Last:    %f, %f", instance->m_mouse_last_x, instance->m_mouse_last_y);
+		ImGui::Text("Current: %f, %f", static_cast<float>(xpos), static_cast<float>(ypos));
+		ImGui::End();
+	}
 }
 

@@ -134,7 +134,7 @@
       <FunctionLevelLinking>true</FunctionLevelLinking>
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <SDLCheck>true</SDLCheck>
-      <PreprocessorDefinitions>NDEBUG;_CONSOLE;GLM_FORCE_INTRINSICS;GLM_FORCE_AVX2;_USE_CUDA_;;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>NDEBUG;_CONSOLE;GLM_FORCE_INTRINSICS;GLM_FORCE_AVX2;_USE_CUDA_;_RENDER_BOUNDARY_;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
       <OpenMPSupport>true</OpenMPSupport>
       <EnableEnhancedInstructionSet>AdvancedVectorExtensions2</EnableEnhancedInstructionSet>
@@ -222,6 +222,7 @@
     <ClInclude Include="SPHKernel.h" />
     <ClInclude Include="sph_kernel.cuh" />
     <ClInclude Include="Transform.h" />
+    <ClInclude Include="util.h" />
   </ItemGroup>
   <ItemGroup>
     <CudaCompile Include="cuda_simulation.cu" />

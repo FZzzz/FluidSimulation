@@ -38,7 +38,7 @@ void Renderer::Render()
 {
 	ClearBuffer();
 	glViewport(0, 0, m_viewport_width, m_viewport_height);
-	RenderObjects();
+	//RenderObjects();
 	RenderParticles();
 	glBindFramebuffer(GL_FRAMEBUFFER, 0);
 }
@@ -117,7 +117,7 @@ void Renderer::RenderParticles()
 	shader->SetUniformVec3("light_pos", m_mainCamera->m_position);
 	shader->SetUniformVec3("camera_pos", m_mainCamera->m_position);
 	shader->SetUniformMat4("view", m_mainCamera->m_lookAt);
-	shader->SetUniformVec3("point_color", glm::vec3(0.8f, 0.8f, 1.f));
+	shader->SetUniformVec3("point_color", glm::vec3(0.7f, 0.7f, 1.f));
 	glBindVertexArray(m_particle_system->getVAO());
 	glBindBuffer(GL_ARRAY_BUFFER, m_particle_system->getVBO());
 	glEnableVertexAttribArray(0);

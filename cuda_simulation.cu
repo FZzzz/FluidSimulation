@@ -564,7 +564,7 @@ void integrate_pbd_d(
 	
 	float3 t_vel = vel[index] + dt * params.gravity;
 	float3 t_pos = pos[index] + dt * t_vel;
-	/*
+	
 	if (t_pos.x >= 1.0f)
 	{
 		t_pos.x = 1.f;

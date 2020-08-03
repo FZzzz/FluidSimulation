@@ -210,42 +210,6 @@ bool Simulation::StepCUDA(float dt)
 	);
 	t3 = std::chrono::high_resolution_clock::now();
 
-	if (m_first_frame)
-	{
-		/*
-		compute_rest_density(
-			m_d_rest_density,
-			particles->m_d_sorted_position,
-			particles->m_d_mass,
-			m_neighbor_searcher->m_d_grid_particle_index,
-			m_neighbor_searcher->m_d_cellStart,
-			m_neighbor_searcher->m_d_cellEnd,
-			numParticles
-		);
-		//cudaThreadSynchronize();
-
-		cudaMemcpy(&m_rest_density, m_d_rest_density, sizeof(float), cudaMemcpyDeviceToHost);
-		*/
-		//cudaMemcpy((void*)m_d_rest_density, &m_rest_density, sizeof(float), cudaMemcpyHostToDevice);
-		std::cout << "Rest density: " << m_rest_density << std::endl;
-
-		m_first_frame = false;
-	}
-	/*
-	// Solve dem particles collision
-	solve_dem_collision(
-		particles->m_d_velocity,
-		particles->m_d_sorted_position,
-		particles->m_d_sorted_velocity,
-		m_neighbor_searcher->m_d_grid_particle_index,
-		m_neighbor_searcher->m_d_cellStart,
-		m_neighbor_searcher->m_d_cellEnd,
-		numParticles,
-		m_neighbor_searcher->m_num_grid_cells,
-		dt
-	);
-	*/
-	
 	solve_sph_fluid(
 		particles->m_d_positions,
 		particles->m_d_new_positions, 
@@ -399,7 +363,7 @@ void Simulation::SetupSimParams()
 
 void Simulation::InitializeBoundaryParticles()
 {
-	const int thickness = 1;
+	const int thickness = 3;
 	const float diameter = 2.f * m_sim_params->particle_radius;
 	// number of particles on x,y,z
 	int nx, ny, nz;
@@ -434,7 +398,7 @@ void Simulation::InitializeBoundaryParticles()
 			{
 				//int idx = k + j * 10 + i * 100;
 				x = buttom_origin.x + diameter * static_cast<float>(i);
-				y = buttom_origin.y + diameter * static_cast<float>(j);
+				y = buttom_origin.y - diameter * static_cast<float>(j);
 				z = buttom_origin.z + diameter * static_cast<float>(k);
 				glm::vec3 pos(x, y, z);
 				positions.push_back(pos);
@@ -489,7 +453,7 @@ void Simulation::InitializeBoundaryParticles()
 			}
 		}
 	}
-
+	 
 	back_margin -= diameter;
 	front_margin += diameter;
 
