@@ -184,27 +184,19 @@ bool Simulation::StepCUDA(float dt)
 	t2 = std::chrono::high_resolution_clock::now();
 	// Neighbor search
 	calculate_hash(
-		m_neighbor_searcher->m_d_grid_particle_hash,
-		m_neighbor_searcher->m_d_grid_particle_index,
+		m_neighbor_searcher->m_d_sph_cell_data,
 		//particles->m_d_positions,
 		particles->m_d_predict_positions,
 		numParticles
 	);
 	sort_particles(
-		m_neighbor_searcher->m_d_grid_particle_hash,
-		m_neighbor_searcher->m_d_grid_particle_index,
+		m_neighbor_searcher->m_d_sph_cell_data,
 		numParticles
 	);
-	reorderDataAndFindCellStart(
-		m_neighbor_searcher->m_d_cellStart,
-		m_neighbor_searcher->m_d_cellEnd,
-		particles->m_d_sorted_position,
-		particles->m_d_sorted_velocity,
-		m_neighbor_searcher->m_d_grid_particle_hash,
-		m_neighbor_searcher->m_d_grid_particle_index,
+	reorder_data(
+		m_neighbor_searcher->m_d_sph_cell_data,
 		//particles->m_d_positions,
 		particles->m_d_predict_positions,
-		particles->m_d_velocity,
 		numParticles,
 		m_neighbor_searcher->m_num_grid_cells
 	);
@@ -215,25 +207,21 @@ bool Simulation::StepCUDA(float dt)
 		particles->m_d_new_positions, 
 		particles->m_d_predict_positions,
 		particles->m_d_velocity,
-		particles->m_d_sorted_position, 
-		particles->m_d_sorted_velocity,
 		particles->m_d_mass,
 		particles->m_d_density, 
 		m_d_rest_density,
 		particles->m_d_C,
 		particles->m_d_lambda,
-		m_neighbor_searcher->m_d_grid_particle_index,
-		m_neighbor_searcher->m_d_cellStart,
-		m_neighbor_searcher->m_d_cellEnd,
+		m_neighbor_searcher->m_d_sph_cell_data,
 		numParticles,
 		m_neighbor_searcher->m_num_grid_cells,
-		m_d_boundary_cell_data,
 		boundary_particles->m_d_positions,
 		boundary_particles->m_d_mass,
 		boundary_particles->m_d_volume,
 		boundary_particles->m_d_C,
 		boundary_particles->m_d_density,
 		boundary_particles->m_d_lambda,
+		m_d_boundary_cell_data,
 		b_numParticles,
 		dt
 	);
@@ -519,9 +507,9 @@ void Simulation::InitializeBoundaryCudaData()
 	cudaGraphicsResourceGetMappedPointer((void**)&(boundary_particles->m_d_positions), &num_bytes, *vbo_resource);
 	//std::cout << "num_bytes " << num_bytes << std::endl;
 	// Precompute hash
-	calculate_hash_boundary(m_d_boundary_cell_data, boundary_particles->m_d_positions, num_particles);
+	calculate_hash(m_d_boundary_cell_data, boundary_particles->m_d_positions, num_particles);
 	// Sort
-	sort_particles_boundary(m_d_boundary_cell_data, num_particles);
+	sort_particles(m_d_boundary_cell_data, num_particles);
 	// Reorder
 	reorderData_boundary(
 		m_d_boundary_cell_data, 

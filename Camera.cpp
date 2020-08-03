@@ -24,6 +24,7 @@ Camera::Camera(CameraDesc desc) :
 
 	m_projection = glm::perspective(m_fov, m_screen_width / m_screen_height, m_near_plane, m_far_plane);
 	m_lookAt = glm::lookAt(m_position, m_target_position, m_up);
+
 }
 
 Camera::Camera(glm::mat4 projection, glm::mat4 lookAt, glm::vec3 position, GLuint ubo)
@@ -72,7 +73,7 @@ void Camera::Update()
 			glm::value_ptr(m_lookAt));
 		glBindBuffer(GL_UNIFORM_BUFFER, 0);
 	}
-	
+	/*
 	{
 		ImGui::Begin("Camera");
 		ImGui::Text("Front:  %f, %f, %f", m_front.x, m_front.y, m_front.z);
@@ -80,6 +81,7 @@ void Camera::Update()
 		ImGui::Text("Up:     %f, %f, %f", m_up.x, m_up.y, m_up.z);
 		ImGui::End();
 	}
+	*/
 
 	/*
 	if (!lock_on_mode)

@@ -205,7 +205,7 @@ bool GLFWApp::Initialize(int width , int height , const std::string &title)
 	m_gui_manager = std::make_shared<GUIManager>();
 	m_gui_manager->Initialize(m_window);
 	m_gui_manager->AddGUIFunction(std::bind(Frame_Status_GUI));
-	m_gui_manager->AddGUIFunction(std::bind(Mouse_Position_GUI));
+	//m_gui_manager->AddGUIFunction(std::bind(Mouse_Position_GUI));
 	//m_gui_manager->AddGUIFunction(std::bind(Object_Viewer_GUI));
 	//m_gui_manager->AddGUIFunction(std::bind(Animated_Character_GUI));
 	

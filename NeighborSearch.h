@@ -11,10 +11,18 @@
 #include "common.h"
 #include "ParticleSystem.h"
 
-
 struct HashEntry
 {
 	std::vector<size_t> particles;
+};
+
+struct CellData
+{
+	uint* grid_hash;
+	uint* grid_index;
+	uint* cellStart;
+	uint* cellEnd;
+	float3* sorted_pos;
 };
 
 class NeighborSearch
@@ -35,10 +43,15 @@ public:
 
 	uint3 m_grid_size;
 	uint  m_num_grid_cells;
+	/*
 	uint* m_d_grid_particle_hash;
 	uint* m_d_grid_particle_index;
 	uint* m_d_cellStart;
 	uint* m_d_cellEnd;
+	*/
+
+	struct CellData m_d_boundary_cell_data;
+	struct CellData m_d_sph_cell_data;
 
 private:
 

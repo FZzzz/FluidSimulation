@@ -4,6 +4,7 @@
 #include <cuda_runtime.h>
 #include "Particle.h"
 #include "Simulation.h"
+#include "NeighborSearch.h"
 //#include <helper_math.h>
 
 #define MAX_THREAD_NUM 512
@@ -35,37 +36,19 @@ void integratePBD(
 void compute_grid_size(uint n, uint block_size, uint& num_blocks, uint& num_threads);
 
 void calculate_hash(
-    uint* grid_particle_hash,
-    uint* grid_particle_index,
+    CellData cell_data,
     float3* pos,
     uint    num_particles
 );
 
-void calculate_hash_boundary(
-    CellData celldata,
-    float3* pos,
-    uint num_particles
-);
-
 void sort_particles(
-    uint* dGridParticleHash, uint* dGridParticleIndex,
-    uint numParticles
-);
-
-void sort_particles_boundary(
     CellData cell_data,
     uint numParticles
 );
 
-void reorderDataAndFindCellStart(
-    uint* cellStart,
-    uint* cellEnd,
-    float3* sortedPos,
-    float3* sortedVel,
-    uint* gridParticleHash,
-    uint* gridParticleIndex,
+void reorder_data(
+    CellData cell_data,
     float3* oldPos,
-    float3* oldVel,
     uint	numParticles,
     uint	numCells
 );
@@ -102,25 +85,21 @@ void solve_sph_fluid(
     float3*  new_pos,
     float3*  predict_pos,
     float3*  vel,
-    float3*  sorted_pos,
-    float3*  sorted_vel,
     float*   mass,
     float*   density,
     float*   rest_density,
     float*   C,
     float*   lambda,
-    uint*    gridParticleIndex,
-    uint*    cellStart,
-    uint*    cellEnd,
+    CellData sph_cell_data,
     uint	 numParticles,
     uint	 numCells,
-    CellData b_cell_data,
     float3*  b_pos,
     float*   b_mass,
     float*   b_volume,
     float*   b_C,
     float*   b_density,
     float*   b_lambda,
+    CellData b_cell_data,
     uint     b_num_particles,
     float    dt
 );

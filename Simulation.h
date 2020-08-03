@@ -46,17 +46,6 @@ struct SimParams
 	float volume;
 };
 
-struct CellData
-{
-	uint* grid_hash;
-	uint* grid_index;
-	uint* cellStart;
-	uint* cellEnd;
-
-	float3* sorted_pos;
-};
-
-
 class Simulation
 {
 

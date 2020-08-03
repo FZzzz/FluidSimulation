@@ -43,39 +43,58 @@ void NeighborSearch::InitializeCUDA()
 #ifdef _DEBUG
     assert(m_particle_system != nullptr);
 #endif
-    /*
-    const auto& particles = m_particle_system->getParticles();
-    m_search_cache.resize(particles.size(), std::vector<size_t>());
-    */
-    const ParticleSet* const particles = m_particle_system->getParticles();
+
+    const ParticleSet* const sph_particles = m_particle_system->getParticles();
+    const ParticleSet* const boundary_particles = m_particle_system->getBoundaryParticles();
 
     /*Allocate CUDA memory*/
-    //allocateArray((void**) &m_d_grid_particle_hash, particles->m_size * sizeof(uint));
-    //allocateArray((void**)&m_d_grid_particle_index, particles->m_size * sizeof(uint));
+    /* SPH cell data initialization */
+    if (sph_particles != nullptr)
+    {
+        cudaMalloc((void**)&m_d_sph_cell_data.grid_hash, sph_particles->m_size * sizeof(uint));
+        cudaMalloc((void**)&m_d_sph_cell_data.grid_index, sph_particles->m_size * sizeof(uint));
 
-    cudaMalloc((void**)&m_d_grid_particle_hash, particles->m_size * sizeof(uint));
-    cudaMalloc((void**)&m_d_grid_particle_index, particles->m_size * sizeof(uint));
-    
-    cudaMalloc((void**)&m_d_cellStart, m_num_grid_cells * sizeof(uint));
-    cudaMalloc((void**)&m_d_cellEnd, m_num_grid_cells * sizeof(uint));
-    /*
-    uint* m_cellStart;
-	uint* m_cellEnd;
-	
-	uint  m_numCells;
-    */
+        cudaMalloc((void**)&m_d_sph_cell_data.cellStart, m_num_grid_cells * sizeof(uint));
+        cudaMalloc((void**)&m_d_sph_cell_data.cellEnd, m_num_grid_cells * sizeof(uint));
+
+        cudaMalloc((void**)&m_d_sph_cell_data.sorted_pos, sph_particles->m_size * sizeof(float3));
+    }
+
+    /* Boundary particle cell data initialization */
+    if (boundary_particles != nullptr)
+    {
+        cudaMalloc((void**)&m_d_boundary_cell_data.grid_hash, boundary_particles->m_size * sizeof(uint));
+        cudaMalloc((void**)&m_d_boundary_cell_data.grid_index, boundary_particles->m_size * sizeof(uint));
+
+        cudaMalloc((void**)&m_d_boundary_cell_data.cellStart, m_num_grid_cells * sizeof(uint));
+        cudaMalloc((void**)&m_d_boundary_cell_data.cellEnd, m_num_grid_cells * sizeof(uint));
+
+        cudaMalloc((void**)&m_d_boundary_cell_data.sorted_pos, boundary_particles->m_size * sizeof(float3));
+    }
 }
 
 void NeighborSearch::Release()
 {
-    if (m_d_grid_particle_hash)
-        cudaFree(m_d_grid_particle_hash);
-    if (m_d_grid_particle_index)
-        cudaFree(m_d_grid_particle_index);
-    if (m_d_cellStart)
-        cudaFree(m_d_cellStart);
-    if (m_d_cellEnd)
-        cudaFree(m_d_cellEnd);
+    const ParticleSet* const sph_particles = m_particle_system->getParticles();
+    const ParticleSet* const boundary_particles = m_particle_system->getBoundaryParticles();
+
+    if (sph_particles != nullptr)
+    {
+        cudaFree(m_d_sph_cell_data.grid_hash);
+        cudaFree(m_d_sph_cell_data.grid_index);
+        cudaFree(m_d_sph_cell_data.cellStart);
+        cudaFree(m_d_sph_cell_data.cellEnd);
+        cudaFree(m_d_sph_cell_data.sorted_pos);
+    }
+    if (boundary_particles != nullptr)
+    {
+        cudaFree(m_d_boundary_cell_data.grid_hash);
+        cudaFree(m_d_boundary_cell_data.grid_index);
+        cudaFree(m_d_boundary_cell_data.cellStart);
+        cudaFree(m_d_boundary_cell_data.cellEnd);
+        cudaFree(m_d_boundary_cell_data.sorted_pos);
+    }
+
 }
 
 /*
@@ -107,27 +126,6 @@ void NeighborSearch::NaiveSearch(float effective_radius)
             }
         }
     }
-    /*
-    const auto& particles = m_particle_system->getParticles();
-    float square_h = effective_radius * effective_radius;
-
-    //#pragma omp parallel default(shared) // Personally I think this is useless... (cannot prevent race condition)
-    {
-        //#pragma omp for schedule(static)  // Using round-robin scheduling
-        for (int i = 0; i < particles.size(); ++i)
-        {
-            for (int j = i+1; j < particles.size(); ++j)
-            {
-                float distance2 = glm::distance2(particles[i]->m_new_position, particles[j]->m_new_position);
-                if (distance2 <= square_h)
-                {
-                    m_search_cache[i].push_back(static_cast<size_t>(j));
-                    m_search_cache[j].push_back(static_cast<size_t>(i));
-                }
-            }
-        }
-    }
-    */
 }
 
 void NeighborSearch::SpatialSearch(float effective_radius)
@@ -250,10 +248,6 @@ glm::i32vec3 NeighborSearch::Flooring(const glm::vec3& position)
     grid_index.y = static_cast<int32_t>(std::floorf(position.y / m_grid_spacing.y));
     grid_index.z = static_cast<int32_t>(std::floorf(position.z / m_grid_spacing.z));
     
-    //grid_index.x = (int32_t)(position.x + 32768.f) - 32768;
-    //grid_index.y = (int32_t)(position.y + 32768.f) - 32768;
-    //grid_index.z = (int32_t)(position.z + 32768.f) - 32768;
-
     return grid_index;
 }
 

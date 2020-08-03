@@ -70,9 +70,6 @@ void ParticleSystem::Release()
 		cudaFree(m_particles->m_d_velocity);
 		cudaFree(m_particles->m_d_new_velocity);
 
-		cudaFree(m_particles->m_d_sorted_position);
-		cudaFree(m_particles->m_d_sorted_velocity);
-
 		cudaFree(m_particles->m_d_force);
 		cudaFree(m_particles->m_d_mass);
 		cudaFree(m_particles->m_d_massInv);
@@ -180,14 +177,6 @@ void ParticleSystem::SetupCUDAMemory()
 		cudaMalloc(
 		(void**)&(m_particles->m_d_lambda),
 			n * sizeof(float)
-			);
-		cudaMalloc(
-		(void**)&(m_particles->m_d_sorted_position),
-			n * sizeof(float3)
-			);
-		cudaMalloc(
-		(void**)&(m_particles->m_d_sorted_velocity),
-			n * sizeof(float3)
 			);
 
 		// Set value

@@ -78,12 +78,6 @@ public:
 	float3* m_d_force;
 
 	/* sorted array on GPU */
-	float3* m_d_sorted_position;
-	float3* m_d_sorted_velocity;
-	float* m_d_sorted_density;
-	float* m_d_sorted_C;
-	float* m_d_sorted_lambda;
-
 	float* m_d_mass;
 	float* m_d_massInv;
 	float* m_d_density;

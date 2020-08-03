@@ -158,9 +158,8 @@ float sph_boundary_volume(
 }
 
 __global__ void calcHashD(
-	uint* grid_particle_hash,  // output
-	uint* grid_particle_index, // output
-	float3* pos,               // input: positions
+	CellData cell_data,			// output		
+	float3* pos,		        // input: positions
 	uint    num_particles)
 {
 	uint index = __umul24(blockIdx.x, blockDim.x) + threadIdx.x;
@@ -174,8 +173,8 @@ __global__ void calcHashD(
 	uint hash = calcGridHash(gridPos);
 
 	// store grid hash and particle index
-	grid_particle_hash[index] = hash;
-	grid_particle_index[index] = index;
+	cell_data.grid_hash[index] = hash;
+	cell_data.grid_index[index] = index;
 }
 
 __global__ 
@@ -208,14 +207,8 @@ void calcHash_boundary_D(
  */
 __global__
 void reorderDataAndFindCellStartD(
-	uint* cellStart,        // output: cell start index
-	uint* cellEnd,          // output: cell end index
-	float3* sortedPos,        // output: sorted positions
-	float3* sortedVel,        // output: sorted velocities
-	uint* gridParticleHash, // input: sorted grid hashes
-	uint* gridParticleIndex,// input: sorted particle indices
+	CellData cell_data,
 	float3* oldPos,           // input: sorted position array
-	float3* oldVel,           // input: sorted velocity array
 	uint    numParticles)
 {
 	// Handle to thread block group
@@ -228,7 +221,7 @@ void reorderDataAndFindCellStartD(
 	// handle case when no. of particles not multiple of block size
 	if (index < numParticles)
 	{
-		hash = gridParticleHash[index];
+		hash = cell_data.grid_hash[index];
 
 		// Load hash data into shared memory so that we can look
 		// at neighboring particle's hash value without loading
@@ -238,7 +231,7 @@ void reorderDataAndFindCellStartD(
 		if (index > 0 && threadIdx.x == 0)
 		{
 			// first thread in block must load neighbor particle hash
-			sharedHash[0] = gridParticleHash[index - 1];
+			sharedHash[0] = cell_data.grid_hash[index - 1];
 		}
 	}
 
@@ -254,24 +247,22 @@ void reorderDataAndFindCellStartD(
 
 		if (index == 0 || hash != sharedHash[threadIdx.x])
 		{
-			cellStart[hash] = index;
+			cell_data.cellStart[hash] = index;
 
 			if (index > 0)
-				cellEnd[sharedHash[threadIdx.x]] = index;
+				cell_data.cellEnd[sharedHash[threadIdx.x]] = index;
 		}
 
 		if (index == numParticles - 1)
 		{
-			cellEnd[hash] = index + 1;
+			cell_data.cellEnd[hash] = index + 1;
 		}
 
 		// Now use the sorted index to reorder the pos and vel data
-		uint sortedIndex = gridParticleIndex[index];
+		uint sortedIndex = cell_data.grid_index[index];
 		float3 pos = oldPos[sortedIndex];
-		float3 vel = oldVel[sortedIndex];
 
-		sortedPos[index] = pos;
-		sortedVel[index] = vel;
+		cell_data.sorted_pos[index] = pos;
 	}
 }
 
@@ -387,42 +378,22 @@ void compute_grid_size(uint n, uint block_size, uint& num_blocks, uint& num_thre
 }
 
 void calculate_hash(
-	uint* grid_particle_hash,
-	uint* grid_particle_index,
+	CellData cell_data,
 	float3* pos,
 	uint    num_particles)
 {
 	uint num_blocks, num_threads;
 	compute_grid_size(num_particles, MAX_THREAD_NUM, num_blocks, num_threads);
 	calcHashD << < num_blocks, num_threads >> > (
-		grid_particle_hash,
-		grid_particle_index,
+		cell_data,
 		pos,
 		num_particles);
 	getLastCudaError("Kernel execution failed: calc_hash");
 }
 
-void calculate_hash_boundary(CellData cell_data, float3* pos, uint num_particles)
-{
-	uint num_blocks, num_threads;
-	compute_grid_size(num_particles, MAX_THREAD_NUM, num_blocks, num_threads);
-
-	calcHash_boundary_D << < num_blocks, num_threads >> > (
-		cell_data,
-		pos,
-		num_particles);
-	getLastCudaError("Kernel execution failed: calc_hash_boundary");
-}
-
-void reorderDataAndFindCellStart(
-	uint* cellStart,
-	uint* cellEnd,
-	float3* sortedPos,
-	float3* sortedVel,
-	uint* gridParticleHash,
-	uint* gridParticleIndex,
+void reorder_data(
+	CellData cell_data,
 	float3* oldPos,
-	float3* oldVel,
 	uint	numParticles,
 	uint	numCells)
 {
@@ -430,18 +401,12 @@ void reorderDataAndFindCellStart(
 	compute_grid_size(numParticles, MAX_THREAD_NUM, numBlocks, numThreads);
 
 	// set all cells to empty
-	checkCudaErrors(cudaMemset(cellStart, 0xffffffff, numCells * sizeof(uint)));
+	checkCudaErrors(cudaMemset(cell_data.cellStart, 0xffffffff, numCells * sizeof(uint)));
 
 	uint smemSize = sizeof(uint) * (numThreads + 1);
 	reorderDataAndFindCellStartD << < numBlocks, numThreads, smemSize >> > (
-		cellStart,
-		cellEnd,
-		sortedPos,
-		sortedVel,
-		gridParticleHash,
-		gridParticleIndex,
+		cell_data,
 		oldPos,
-		oldVel,
 		numParticles);
 	getLastCudaError("Kernel execution failed: reorderDataAndFindCellStartD");
 
@@ -860,7 +825,7 @@ float pbf_lambda_0(
 			if (j != index)                // check not colliding with self
 			{
 				uint original_index = gridParticleIndex[j];
-				float particle_mass = mass[original_index];
+				//float particle_mass = mass[original_index];
 				float3 pos2 = sorted_pos[j];
 				float3 vec = pos - pos2;
 				float dist = length(vec);
@@ -1633,22 +1598,13 @@ void integratePBD(
 		);
 }
 
-void sort_particles(uint* dGridParticleHash, uint* dGridParticleIndex, uint numParticles)
-{
-	thrust::sort_by_key(
-		thrust::device_ptr<uint>(dGridParticleHash),
-		thrust::device_ptr<uint>(dGridParticleHash + numParticles),
-		thrust::device_ptr<uint>(dGridParticleIndex)
-	);
-}
-
-void sort_particles_boundary(CellData cell_data, uint numParticles)
+void sort_particles(CellData cell_data, uint numParticles)
 {
 	thrust::sort_by_key(
 		thrust::device_ptr<uint>(cell_data.grid_hash),
 		thrust::device_ptr<uint>(cell_data.grid_hash + numParticles),
 		thrust::device_ptr<uint>(cell_data.grid_index)
-		);
+	);
 }
 
 void solve_dem_collision(
@@ -1685,31 +1641,27 @@ void solve_dem_collision(
 }
 
 void solve_sph_fluid(
-	float3* pos,
-	float3* new_pos,
-	float3* predict_pos,
-	float3* vel,
-	float3* sorted_pos,
-	float3* sorted_vel,
-	float* mass,
-	float* density,
-	float* rest_density,
-	float* C,
-	float* lambda,
-	uint* gridParticleIndex,
-	uint* cellStart,
-	uint* cellEnd,
-	uint	numParticles,
-	uint	numCells,
-	CellData b_cell_data,
-	float3*	 b_pos,
-	float*	 b_mass,
-	float*   b_volume,
-	float*	 b_C,
-	float*	 b_density,
-	float*	 b_lambda,
-	uint     b_num_particles,
-	float	dt)
+	float3*		pos,
+	float3*		new_pos,
+	float3*		predict_pos,
+	float3*		vel,
+	float*		mass,
+	float*		density,
+	float*		rest_density,
+	float*		C,
+	float*		lambda,
+	CellData	sph_cell_data,
+	uint		numParticles,
+	uint		numCells,
+	float3*		b_pos,
+	float*		b_mass,
+	float*		b_volume,
+	float*		b_C,
+	float*		b_density,
+	float*		b_lambda,
+	CellData	b_cell_data,
+	uint		b_num_particles,
+	float		dt)
 {
 	std::chrono::steady_clock::time_point t1, t2, t3, t4, t5;
 	uint numThreads, numBlocks;
@@ -1722,11 +1674,11 @@ void solve_sph_fluid(
 		t1 = std::chrono::high_resolution_clock::now();
 		compute_density_d << <numBlocks, numThreads >> > (
 			density, rest_density,
-			sorted_pos,
+			sph_cell_data.sorted_pos,
 			mass, C,
-			gridParticleIndex,
-			cellStart,
-			cellEnd,
+			sph_cell_data.grid_index,
+			sph_cell_data.cellStart,
+			sph_cell_data.cellEnd,
 			b_cell_data,
 			b_volume,
 			numParticles
@@ -1735,11 +1687,11 @@ void solve_sph_fluid(
 		// compute density contributed by boundary particles
 		compute_boundary_density_d << <numBlocks, numThreads >> > (
 			rest_density,
-			sorted_pos,
+			sph_cell_data.sorted_pos,
 			mass,
-			cellStart,
-			cellEnd,
-			gridParticleIndex,
+			sph_cell_data.cellStart,
+			sph_cell_data.cellEnd,
+			sph_cell_data.grid_index,
 			b_cell_data,
 			b_mass,
 			b_volume,
@@ -1755,12 +1707,12 @@ void solve_sph_fluid(
  		compute_lambdas_d << <numBlocks, numThreads >> > (
 			lambda,
 			rest_density,
-			sorted_pos,
+			sph_cell_data.sorted_pos,
 			C,
 			mass,
-			gridParticleIndex,
-			cellStart,
-			cellEnd,
+			sph_cell_data.grid_index,
+			sph_cell_data.cellStart,
+			sph_cell_data.cellEnd,
 			b_cell_data,
 			b_volume,
 			numParticles
@@ -1773,10 +1725,10 @@ void solve_sph_fluid(
 			b_C,
 			b_mass,
 			b_cell_data,
-			sorted_pos,
-			gridParticleIndex,
-			cellStart,
-			cellEnd,
+			sph_cell_data.sorted_pos,
+			sph_cell_data.grid_index,
+			sph_cell_data.cellStart,
+			sph_cell_data.cellEnd,
 			rest_density,
 			b_num_particles
 		);
@@ -1786,11 +1738,11 @@ void solve_sph_fluid(
 		compute_position_correction << <numBlocks, numThreads >> > (
 			lambda,
 			rest_density,
-			sorted_pos,
+			sph_cell_data.sorted_pos,
 			new_pos,
-			gridParticleIndex,
-			cellStart,
-			cellEnd,
+			sph_cell_data.grid_index,
+			sph_cell_data.cellStart,
+			sph_cell_data.cellEnd,
 			b_cell_data,
 			b_lambda,
 			numParticles,
