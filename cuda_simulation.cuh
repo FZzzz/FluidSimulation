@@ -53,13 +53,6 @@ void reorder_data(
     uint	numCells
 );
 
-void reorderData_boundary(
-    CellData celldata,
-    float3* oldPos,
-    uint	numParticles,
-    uint	numCells
-    );
-
 void compute_boundary_volume(
     CellData data,
     float* mass,
@@ -80,6 +73,21 @@ void solve_dem_collision(
     float dt  
 );
 
+void solve_sph_fluid(
+    float*          rest_density,
+    ParticleSet*    sph_particles,
+    CellData		sph_cell_data,
+    uint			numParticles,
+    uint			numCells,
+    ParticleSet*    boundary_particles,
+    CellData		b_cell_data,
+    uint			b_num_particles,
+    float			dt,
+    int             iterations=1
+);
+
+
+/*
 void solve_sph_fluid(
     float3*  pos,
     float3*  new_pos,
@@ -103,6 +111,6 @@ void solve_sph_fluid(
     uint     b_num_particles,
     float    dt
 );
-
+*/
 
 #endif

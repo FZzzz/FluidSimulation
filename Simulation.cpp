@@ -147,7 +147,8 @@ bool Simulation::StepCUDA(float dt)
 	if (m_pause)
 		return true;
 	
-	const float effective_radius = 1.f;
+	int iterations = 1;
+
 	std::chrono::steady_clock::time_point t1, t2, t3, t4, t5;
 
 	ParticleSet* particles = m_particle_system->getParticles();
@@ -185,7 +186,6 @@ bool Simulation::StepCUDA(float dt)
 	// Neighbor search
 	calculate_hash(
 		m_neighbor_searcher->m_d_sph_cell_data,
-		//particles->m_d_positions,
 		particles->m_d_predict_positions,
 		numParticles
 	);
@@ -203,27 +203,16 @@ bool Simulation::StepCUDA(float dt)
 	t3 = std::chrono::high_resolution_clock::now();
 
 	solve_sph_fluid(
-		particles->m_d_positions,
-		particles->m_d_new_positions, 
-		particles->m_d_predict_positions,
-		particles->m_d_velocity,
-		particles->m_d_mass,
-		particles->m_d_density, 
 		m_d_rest_density,
-		particles->m_d_C,
-		particles->m_d_lambda,
+		particles,
 		m_neighbor_searcher->m_d_sph_cell_data,
 		numParticles,
 		m_neighbor_searcher->m_num_grid_cells,
-		boundary_particles->m_d_positions,
-		boundary_particles->m_d_mass,
-		boundary_particles->m_d_volume,
-		boundary_particles->m_d_C,
-		boundary_particles->m_d_density,
-		boundary_particles->m_d_lambda,
-		m_d_boundary_cell_data,
+		boundary_particles,
+		m_neighbor_searcher->m_d_boundary_cell_data,
 		b_numParticles,
-		dt
+		dt,
+		iterations
 	);
 	
 	t4 = std::chrono::high_resolution_clock::now();
@@ -335,6 +324,7 @@ void Simulation::SetupSimParams()
 	m_sim_params->global_damping = 0.99f;
 	m_sim_params->particle_radius = particle_radius;
 	m_sim_params->effective_radius = effective_radius;
+	m_sim_params->epsilon = 100.f;
 	m_sim_params->grid_size = m_neighbor_searcher->m_grid_size;
 	m_sim_params->num_cells = m_neighbor_searcher->m_num_grid_cells;
 	m_sim_params->world_origin = make_float3(0, 0, 0);
@@ -511,14 +501,13 @@ void Simulation::InitializeBoundaryCudaData()
 	// Sort
 	sort_particles(m_d_boundary_cell_data, num_particles);
 	// Reorder
-	reorderData_boundary(
+	reorder_data(
 		m_d_boundary_cell_data, 
 		boundary_particles->m_d_positions, 
 		num_particles,
 		m_neighbor_searcher->m_num_grid_cells
 	);
 
-	
 	// Compute boundary particle volume
 	compute_boundary_volume(
 		m_d_boundary_cell_data,
@@ -526,7 +515,6 @@ void Simulation::InitializeBoundaryCudaData()
 		boundary_particles->m_d_volume,
 		num_particles
 	);
-	
 
 	// Unmap CUDA buffer object
 	cudaGraphicsUnmapResources(1, vbo_resource, 0);

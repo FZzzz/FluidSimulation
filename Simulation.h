@@ -28,15 +28,13 @@ struct SimParams
 	float global_damping;
 	float effective_radius;
 	float particle_radius;
-
+	float epsilon;
+ 
 	uint3 grid_size;
 	uint num_cells;
 	float3 world_origin;
 	float3 cell_size;
-	/*
-	uint num_bodies;
-	uint max_particles_per_cell;
-	*/
+
 	float spring;
 	float damping;
 	float shear;

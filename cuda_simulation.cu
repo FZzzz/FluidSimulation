@@ -265,7 +265,7 @@ void reorderDataAndFindCellStartD(
 		cell_data.sorted_pos[index] = pos;
 	}
 }
-
+/*
 __global__
 void reorderData_boundary_D(
 	CellData cell_data,
@@ -326,6 +326,8 @@ void reorderData_boundary_D(
 		cell_data.sorted_pos[index] = pos;
 	}
 }
+*/
+
 __global__
 void compute_boundary_volume_d(
 	CellData data, 
@@ -411,7 +413,7 @@ void reorder_data(
 	getLastCudaError("Kernel execution failed: reorderDataAndFindCellStartD");
 
 }
-
+/*
 void reorderData_boundary(
 	CellData cell_data, 
 	float3* oldPos, 
@@ -432,6 +434,7 @@ void reorderData_boundary(
 	getLastCudaError("Kernel execution failed: reorderDataAndFindCellStartD");
 
 }
+*/
 
 void compute_boundary_volume(CellData data, float* mass, float* volume, uint numParticles)
 {
@@ -478,7 +481,7 @@ void integrate_d(
 	t_vel = t_vel + params.gravity * deltaTime;
 	//t_vel = params.damping * t_vel;
 	t_pos = t_pos + t_vel * deltaTime;
-
+	
 	if (t_pos.x > 10.0f - params.particle_radius)
 	{
 		t_pos.x = 10.0f - params.particle_radius;
@@ -509,9 +512,10 @@ void integrate_d(
 		t_pos.y = 0.f + params.particle_radius;
 		t_vel.y *= params.boundary_damping;
 	}
-
+	
 	pos[index] = t_pos;
 	vel[index] = t_vel;
+	
 	/*
 	if (index == 0)
 		printf("After particles[0]: %f, %f, %f\n", pos[index].x, pos[index].y, pos[index].z);
@@ -529,37 +533,37 @@ void integrate_pbd_d(
 	
 	float3 t_vel = vel[index] + dt * params.gravity;
 	float3 t_pos = pos[index] + dt * t_vel;
-	
+	/*
 	if (t_pos.x >= 1.0f)
 	{
 		t_pos.x = 1.f;
-		t_vel.x =  -params.boundary_damping * abs(t_vel.x);
+		//t_vel.x =  -params.boundary_damping * abs(t_vel.x);
 	}
 
 	if (t_pos.x <= -1.0f)
 	{
 	 	t_pos.x = -1.f;
-		t_vel.x = params.boundary_damping * abs(t_vel.x);
+		//t_vel.x = params.boundary_damping * abs(t_vel.x);
 	}
 
 	if (t_pos.z >= 1.0f)
 	{
 		t_pos.z = 1.f;
-		t_vel.z = -params.boundary_damping * abs(t_vel.z);
+		//t_vel.z = -params.boundary_damping * abs(t_vel.z);
 	}
 
 	if (t_pos.z <= -1.0f)
 	{
 		t_pos.z = -1.f;
-		t_vel.z = params.boundary_damping * abs(t_vel.z);
+		//t_vel.z = params.boundary_damping * abs(t_vel.z);
 	}
 	
 	if (t_pos.y <= 0.f)
 	{
 		t_pos.y = 0.f;
-		t_vel.y = params.boundary_damping * abs(t_vel.y);
+		//t_vel.y = params.boundary_damping * abs(t_vel.y);
 	}
-	
+	*/
 	/* Velocity limitation
 	if (length(t_vel) > 5.f)
 	{
@@ -1292,7 +1296,6 @@ void compute_lambdas_d(
 	// get address in grid
 	int3 gridPos = calcGridPos(pos);
 
-	const float epsilon = 100.f;
 	float3 gradientC_i = make_float3(0);
 		//-(1.f / (*rest_density)) *
 		//Poly6_W_Gradient_CUDA(make_float3(0, 0, 0), 0, params.effective_radius);
@@ -1338,7 +1341,7 @@ void compute_lambdas_d(
 	}
 
 	//printf("gradientC_sum: %f\n", gradientC_sum);
-	lambda[originalIndex] /= gradientC_sum + epsilon;
+	lambda[originalIndex] /= gradientC_sum + params.epsilon;
 
 	//lambda[originalIndex] = lambda_res;
 }
@@ -1376,7 +1379,6 @@ void compute_boundary_lambdas_d(
 	// get address in grid
 	int3 gridPos = calcGridPos(pos);
 
-	const float epislon = 0.001f;
 	float3 gradientC_i = make_float3(0);
 	//-(1.f / (*rest_density)) *
 	//Poly6_W_Gradient_CUDA(make_float3(0, 0, 0), 0, params.effective_radius);
@@ -1429,7 +1431,7 @@ void compute_boundary_lambdas_d(
 	}
 
 	//printf("gradientC_sum: %f\n", gradientC_sum);
-	b_lambda[originalIndex] /= gradientC_sum + epislon;
+	b_lambda[originalIndex] /= gradientC_sum + params.epsilon;
 
 	//lambda[originalIndex] = lambda_res;
 }
@@ -1516,6 +1518,7 @@ __global__
 void apply_correction(
 	float3* new_pos,
 	float3* predict_pos,
+	CellData cell_data,
 	uint numParticles
 )
 {
@@ -1523,7 +1526,11 @@ void apply_correction(
 
 	if (index >= numParticles) return;
 	
-	predict_pos[index] = new_pos[index];	
+	uint original_index = cell_data.grid_index[index];
+
+	predict_pos[original_index] = new_pos[original_index];
+	// write back to sorted_pos for next iteration
+	cell_data.sorted_pos[index] = new_pos[original_index];
 }
 
 
@@ -1596,6 +1603,7 @@ void integratePBD(
 		deltaTime,
 		numParticles
 		);
+	getLastCudaError("Kernel execution failed: integrate_pbd_d ");
 }
 
 void sort_particles(CellData cell_data, uint numParticles)
@@ -1641,46 +1649,37 @@ void solve_dem_collision(
 }
 
 void solve_sph_fluid(
-	float3*		pos,
-	float3*		new_pos,
-	float3*		predict_pos,
-	float3*		vel,
-	float*		mass,
-	float*		density,
-	float*		rest_density,
-	float*		C,
-	float*		lambda,
-	CellData	sph_cell_data,
-	uint		numParticles,
-	uint		numCells,
-	float3*		b_pos,
-	float*		b_mass,
-	float*		b_volume,
-	float*		b_C,
-	float*		b_density,
-	float*		b_lambda,
-	CellData	b_cell_data,
-	uint		b_num_particles,
-	float		dt)
+	float*			rest_density,
+	ParticleSet*	sph_particles,
+	CellData		sph_cell_data,
+	uint			numParticles,
+	uint			numCells,
+	ParticleSet*	boundary_particles,
+	CellData		b_cell_data,
+	uint			b_num_particles,
+	float			dt,
+	int				iterations
+)
 {
 	std::chrono::steady_clock::time_point t1, t2, t3, t4, t5;
 	uint numThreads, numBlocks;
 	compute_grid_size(numParticles, MAX_THREAD_NUM, numBlocks, numThreads);
 
-	for (int i = 0; i < 1; ++i)
+	for (int i = 0; i < iterations; ++i)
 	{
 		// CUDA SPH Kernel
 		// compute density
 		t1 = std::chrono::high_resolution_clock::now();
 		compute_density_d << <numBlocks, numThreads >> > (
-			density, rest_density,
+			sph_particles->m_d_density, 
+			rest_density,
 			sph_cell_data.sorted_pos,
-			mass, C,
+			sph_particles->m_d_mass, sph_particles->m_d_C,
 			sph_cell_data.grid_index,
 			sph_cell_data.cellStart,
 			sph_cell_data.cellEnd,
 			b_cell_data,
-			b_volume,
+			boundary_particles->m_d_volume,
 			numParticles
 			);
 		getLastCudaError("Kernel execution failed: compute_density_d ");
@@ -1688,15 +1687,15 @@ void solve_sph_fluid(
 		compute_boundary_density_d << <numBlocks, numThreads >> > (
 			rest_density,
 			sph_cell_data.sorted_pos,
-			mass,
+			sph_particles->m_d_mass,
 			sph_cell_data.cellStart,
 			sph_cell_data.cellEnd,
 			sph_cell_data.grid_index,
 			b_cell_data,
-			b_mass,
-			b_volume,
-			b_C,
-			b_density,
+			boundary_particles->m_d_mass,
+			boundary_particles->m_d_volume,
+			boundary_particles->m_d_C,
+			boundary_particles->m_d_density,
 			b_num_particles
 			);
 		// compute density of bounary particles
@@ -1705,25 +1704,25 @@ void solve_sph_fluid(
 		t2 = std::chrono::high_resolution_clock::now();
 		// compute lambda
  		compute_lambdas_d << <numBlocks, numThreads >> > (
-			lambda,
+			sph_particles->m_d_lambda,
 			rest_density,
 			sph_cell_data.sorted_pos,
-			C,
-			mass,
+			sph_particles->m_d_C,
+			sph_particles->m_d_mass,
 			sph_cell_data.grid_index,
 			sph_cell_data.cellStart,
 			sph_cell_data.cellEnd,
 			b_cell_data,
-			b_volume,
+			boundary_particles->m_d_volume,
 			numParticles
 			);
 		getLastCudaError("Kernel execution failed: compute_lambdas_d ");
 		compute_boundary_lambdas_d << <numBlocks, numThreads >> > (
-			b_lambda,
-			b_volume,
-			b_pos,
-			b_C,
-			b_mass,
+			boundary_particles->m_d_lambda,
+			boundary_particles->m_d_volume,
+			boundary_particles->m_d_positions,
+			boundary_particles->m_d_C,
+			boundary_particles->m_d_mass,
 			b_cell_data,
 			sph_cell_data.sorted_pos,
 			sph_cell_data.grid_index,
@@ -1736,28 +1735,36 @@ void solve_sph_fluid(
 		t3 = std::chrono::high_resolution_clock::now();
 		// compute new position
 		compute_position_correction << <numBlocks, numThreads >> > (
-			lambda,
+			sph_particles->m_d_lambda,
 			rest_density,
 			sph_cell_data.sorted_pos,
-			new_pos,
+			sph_particles->m_d_new_positions,
 			sph_cell_data.grid_index,
 			sph_cell_data.cellStart,
 			sph_cell_data.cellEnd,
 			b_cell_data,
-			b_lambda,
+			boundary_particles->m_d_lambda,
 			numParticles,
 			dt
-			);
+		);
 		getLastCudaError("Kernel execution failed: compute_position_correction ");
 		// correct this iteration
-		apply_correction << <numBlocks, numThreads >> > (new_pos, predict_pos, numParticles);
+		apply_correction << <numBlocks, numThreads >> > (
+			sph_particles->m_d_new_positions, 
+			sph_particles->m_d_predict_positions, 
+			sph_cell_data,
+			numParticles
+		);
 		getLastCudaError("Kernel execution failed: apply_correction ");
 
 		t4 = std::chrono::high_resolution_clock::now();
 	}
 	// final correction
 	finalize_correction << <numBlocks, numThreads >> > (
-		pos, new_pos, predict_pos, vel, 
+		sph_particles->m_d_positions, 
+		sph_particles->m_d_new_positions, 
+		sph_particles->m_d_predict_positions, 
+		sph_particles->m_d_velocity,
 		numParticles, 
 		dt
 	);
