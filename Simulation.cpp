@@ -147,7 +147,7 @@ bool Simulation::StepCUDA(float dt)
 	if (m_pause)
 		return true;
 	
-	int iterations = 1;
+	int iterations = 10;
 
 	std::chrono::steady_clock::time_point t1, t2, t3, t4, t5;
 
@@ -479,17 +479,8 @@ void Simulation::InitializeBoundaryCudaData()
 {
 	auto boundary_particles = m_particle_system->getBoundaryParticles();
 	size_t num_particles = boundary_particles->m_size;
-
-	cudaMalloc((void**)&(m_d_boundary_cell_data.grid_hash), boundary_particles->m_size * sizeof(uint));
-	cudaMalloc((void**)&(m_d_boundary_cell_data.grid_index), boundary_particles->m_size * sizeof(uint));
-
-	cudaMalloc((void**)&(m_d_boundary_cell_data.cellStart), m_neighbor_searcher->m_num_grid_cells * sizeof(uint));
-	cudaMalloc((void**)&(m_d_boundary_cell_data.cellEnd), m_neighbor_searcher->m_num_grid_cells * sizeof(uint));
-
-	cudaMalloc((void**)&(m_d_boundary_cell_data.sorted_pos), boundary_particles->m_size * sizeof(float3));
-
 	cudaGraphicsResource** vbo_resource = m_particle_system->getBoundaryCUDAGraphicsResource();
-
+	
 	// Map vbo to m_d_positinos
 	cudaGraphicsMapResources(1, vbo_resource, 0);
 
@@ -497,12 +488,12 @@ void Simulation::InitializeBoundaryCudaData()
 	cudaGraphicsResourceGetMappedPointer((void**)&(boundary_particles->m_d_positions), &num_bytes, *vbo_resource);
 	//std::cout << "num_bytes " << num_bytes << std::endl;
 	// Precompute hash
-	calculate_hash(m_d_boundary_cell_data, boundary_particles->m_d_positions, num_particles);
+	calculate_hash(m_neighbor_searcher->m_d_boundary_cell_data, boundary_particles->m_d_positions, num_particles);
 	// Sort
-	sort_particles(m_d_boundary_cell_data, num_particles);
+	sort_particles(m_neighbor_searcher->m_d_boundary_cell_data, num_particles);
 	// Reorder
 	reorder_data(
-		m_d_boundary_cell_data, 
+		m_neighbor_searcher->m_d_boundary_cell_data,
 		boundary_particles->m_d_positions, 
 		num_particles,
 		m_neighbor_searcher->m_num_grid_cells
@@ -510,7 +501,7 @@ void Simulation::InitializeBoundaryCudaData()
 
 	// Compute boundary particle volume
 	compute_boundary_volume(
-		m_d_boundary_cell_data,
+		m_neighbor_searcher->m_d_boundary_cell_data,
 		boundary_particles->m_d_mass,
 		boundary_particles->m_d_volume,
 		num_particles
@@ -551,7 +542,7 @@ void Simulation::GenerateFluidCube()
 			{
 				//int idx = k + j * 10 + i * 100;
 				x = 0.0f   + diameter * static_cast<float>(i);
-				y = 1.0f + diameter * static_cast<float>(j);
+				y = 0.6f + diameter * static_cast<float>(j);
 				z = -0.f  + diameter * static_cast<float>(k);
 				glm::vec3 pos(x, y, z);
 				particles->m_positions[idx] = pos;

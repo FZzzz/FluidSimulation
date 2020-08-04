@@ -533,7 +533,7 @@ void integrate_pbd_d(
 	
 	float3 t_vel = vel[index] + dt * params.gravity;
 	float3 t_pos = pos[index] + dt * t_vel;
-	/*
+	
 	if (t_pos.x >= 1.0f)
 	{
 		t_pos.x = 1.f;
@@ -563,7 +563,7 @@ void integrate_pbd_d(
 		t_pos.y = 0.f;
 		//t_vel.y = params.boundary_damping * abs(t_vel.y);
 	}
-	*/
+	
 	/* Velocity limitation
 	if (length(t_vel) > 5.f)
 	{
@@ -1525,12 +1525,15 @@ void apply_correction(
 	uint index = __mul24(blockIdx.x, blockDim.x) + threadIdx.x;
 
 	if (index >= numParticles) return;
+
+	//predict_pos[index] = new_pos[index];
 	
 	uint original_index = cell_data.grid_index[index];
 
 	predict_pos[original_index] = new_pos[original_index];
 	// write back to sorted_pos for next iteration
 	cell_data.sorted_pos[index] = new_pos[original_index];
+	
 }
 
 
