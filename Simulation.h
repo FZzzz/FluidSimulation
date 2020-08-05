@@ -41,6 +41,9 @@ struct SimParams
 	float attraction;
 	float boundary_damping;
 
+	float static_friction;
+	float kinematic_friction;
+
 	float volume;
 };
 

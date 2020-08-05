@@ -1658,7 +1658,6 @@ void solve_sph_fluid(
 	ParticleSet*	sph_particles,
 	CellData		sph_cell_data,
 	uint			numParticles,
-	uint			numCells,
 	ParticleSet*	boundary_particles,
 	CellData		b_cell_data,
 	uint			b_num_particles,
@@ -1764,7 +1763,7 @@ void solve_sph_fluid(
 
 		t4 = std::chrono::high_resolution_clock::now();
 	}
-	// final correction
+	// finalize correction
 	finalize_correction << <numBlocks, numThreads >> > (
 		sph_particles->m_d_positions, 
 		sph_particles->m_d_new_positions, 
@@ -1786,7 +1785,160 @@ void solve_sph_fluid(
 
 }
 
-void cuda_test_offset(unsigned int block_num, unsigned int thread_num, float3* positions)
+__device__
+float3 pbd_dem_correction(
+	int3    grid_pos,
+	uint    index,
+	float3  pos,
+	float	w0,
+	float*	invMass,
+	CellData cell_data
+)
 {
-	test_offset << <block_num, thread_num >> > (positions);
+	uint grid_hash = calcGridHash(grid_pos);
+
+	// get start of bucket for this cell
+	uint start_index = cell_data.cellStart[grid_hash];
+	float3 correction = make_float3(0, 0, 0);
+
+	if (start_index != 0xffffffff)          // cell is not empty
+	{
+		// iterate over particles in this cell
+		uint end_index = cell_data.cellEnd[grid_hash];
+
+		// reuse C in searching
+		float C = 0;
+
+		for (uint j = start_index; j < end_index; j++)
+		{
+			float3 correction_j = make_float3(0, 0, 0);
+			if (j != index)                // check not colliding with self
+			{
+				uint original_index_j = cell_data.grid_index[j];
+
+				float3 pos2 = cell_data.sorted_pos[j];
+				float3 v = pos - pos2;
+				float dist = length(v);
+
+				// correct if distance is close
+				if (dist <= 2.f * params.particle_radius)
+				{
+					// Non-penetration correction
+					const float w1 = invMass[original_index_j];
+
+					float w_sum = w0 + w1;
+					C = dist - 2.f * params.particle_radius;
+					
+					// normalize v + 0.000001f for vanish problem
+					float3 n = v / (dist + 0.000001f);
+
+					correction_j = -w0 * (1.f / w_sum) * C * n;
+
+
+					// Tangential correction
+					// project on tangential direction
+					float3 correction_j_t = correction_j - (dot(correction_j, n) * n);
+					float threshold = params.static_friction * dist;
+					float len = length(correction_j_t);
+
+					// use kinematic friction model
+					if (length(correction_j_t) < threshold)
+					{
+						float coeff = min(params.kinematic_friction * dist / len, 1.f);
+						correction_j_t = coeff * correction_j_t;
+					}
+
+					correction_j_t = (w0 / w_sum) * correction_j_t;
+					correction_j += correction_j_t;
+				}
+
+
+				correction += correction_j;
+			}
+		}
+
+		//printf("Num neighbors: %u\n", end_index - start_index);
+	}
+	return correction;
+}
+
+__global__
+void compute_dem_correction(
+	float3*		new_pos,		// output: corrected pos
+	float*		invMass,		// input: mass
+	CellData	cell_data,		// input: cell data of dem particles
+	uint		numParticles	// input: number of DEM particles
+)
+{
+	uint index = __mul24(blockIdx.x, blockDim.x) + threadIdx.x;
+	
+	if (index >= numParticles) return;
+
+	uint original_index = cell_data.grid_index[index];
+
+	// read particle data from sorted arrays
+	float3 pos = cell_data.sorted_pos[index];
+	float w0 = invMass[original_index];
+	// get address in grid
+	int3 gridPos = calcGridPos(pos);
+
+	float3 correction = make_float3(0, 0, 0);
+
+	for (int z = -1; z <= 1; z++)
+	{
+		for (int y = -1; y <= 1; y++)
+		{
+			for (int x = -1; x <= 1; x++)
+			{
+				int3 neighbor_pos = gridPos + make_int3(x, y, z);
+				correction += pbd_dem_correction(
+					neighbor_pos, index,
+					pos, w0,
+					invMass,
+					cell_data
+				);
+			}
+		}
+	}
+
+	new_pos[original_index] = pos + correction;
+}
+
+void solve_pbd_dem(
+	ParticleSet* dem_particles, 
+	CellData cell_data, 
+	uint numParticles, 
+	float dt,
+	int iteration
+)
+{
+	uint numThreads, numBlocks;
+	compute_grid_size(numParticles, MAX_THREAD_NUM, numBlocks, numThreads);
+	for (int i = 0; i < iteration; ++i)
+	{
+		compute_dem_correction << <numBlocks, numThreads >> > (
+			dem_particles->m_d_new_positions,
+			dem_particles->m_d_massInv,
+			cell_data,
+			numParticles
+			);
+		getLastCudaError("Kernel execution failed: compute_dem_correction ");
+		apply_correction << <numBlocks, numThreads >> > (
+			dem_particles->m_d_new_positions,
+			dem_particles->m_d_predict_positions,
+			cell_data,
+			numParticles
+			);
+	}
+	getLastCudaError("Kernel execution failed: apply_correction ");
+	// finalize correction
+	finalize_correction << <numBlocks, numThreads >> > (
+		dem_particles->m_d_positions,
+		dem_particles->m_d_new_positions,
+		dem_particles->m_d_predict_positions,
+		dem_particles->m_d_velocity,
+		numParticles,
+		dt
+		);
+	getLastCudaError("Kernel execution failed: finalize_correction ");
 }

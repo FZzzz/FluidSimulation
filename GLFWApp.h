@@ -65,8 +65,7 @@ private:
 	GLFWwindow* m_window;
 	GLFWcursor* m_mouseCursors[ImGuiMouseCursor_COUNT];
 
-	double m_previousTime , m_currentTime , m_deltaTime;
-	char m_glsl_version[32];
+	double m_previousTime, m_currentTime, m_deltaTime;
 	
 	/*Importer*/
 	std::shared_ptr<AssetImporter> m_importer;

@@ -78,7 +78,6 @@ void solve_sph_fluid(
     ParticleSet*    sph_particles,
     CellData		sph_cell_data,
     uint			numParticles,
-    uint			numCells,
     ParticleSet*    boundary_particles,
     CellData		b_cell_data,
     uint			b_num_particles,
@@ -86,31 +85,12 @@ void solve_sph_fluid(
     int             iterations=1
 );
 
-
-/*
-void solve_sph_fluid(
-    float3*  pos,
-    float3*  new_pos,
-    float3*  predict_pos,
-    float3*  vel,
-    float*   mass,
-    float*   density,
-    float*   rest_density,
-    float*   C,
-    float*   lambda,
-    CellData sph_cell_data,
-    uint	 numParticles,
-    uint	 numCells,
-    float3*  b_pos,
-    float*   b_mass,
-    float*   b_volume,
-    float*   b_C,
-    float*   b_density,
-    float*   b_lambda,
-    CellData b_cell_data,
-    uint     b_num_particles,
-    float    dt
+void solve_pbd_dem(
+    ParticleSet* dem_particles,
+    CellData     cell_data,
+    uint         numParticles,
+    float        dt,
+    int          iteration
 );
-*/
 
 #endif

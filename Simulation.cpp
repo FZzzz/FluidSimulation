@@ -7,6 +7,7 @@
 #include <cuda_gl_interop.h>
 #include <omp.h>
 #include <chrono>
+#include <cstdlib>
 #include "cuda_simulation.cuh"
 
 
@@ -201,19 +202,28 @@ bool Simulation::StepCUDA(float dt)
 		m_neighbor_searcher->m_num_grid_cells
 	);
 	t3 = std::chrono::high_resolution_clock::now();
-
+	
+	solve_pbd_dem(
+		particles,
+		m_neighbor_searcher->m_d_sph_cell_data,
+		numParticles,
+		dt,
+		iterations
+	);
+	
+	/*
 	solve_sph_fluid(
 		m_d_rest_density,
 		particles,
 		m_neighbor_searcher->m_d_sph_cell_data,
 		numParticles,
-		m_neighbor_searcher->m_num_grid_cells,
 		boundary_particles,
 		m_neighbor_searcher->m_d_boundary_cell_data,
 		b_numParticles,
 		dt,
 		iterations
 	);
+	*/
 	
 	t4 = std::chrono::high_resolution_clock::now();
 
@@ -334,6 +344,10 @@ void Simulation::SetupSimParams()
 	m_sim_params->shear = 0.1f;
 	m_sim_params->attraction = 0.0f;
 	m_sim_params->boundary_damping = 1.0f;
+	
+	// ice friction at -12 C
+	m_sim_params->static_friction = 0.3f;
+	m_sim_params->kinematic_friction = 0.035f;
 
 	m_particle_system->setParticleRadius(particle_radius);
 	setParams(m_sim_params);
@@ -513,6 +527,7 @@ void Simulation::InitializeBoundaryCudaData()
 
 void Simulation::GenerateFluidCube()
 {
+	std::srand(time(NULL));
 	// diameter of particle
 	const float diameter = 2.f * m_sim_params->particle_radius;
 	// number of particles on x,y,z
@@ -540,10 +555,14 @@ void Simulation::GenerateFluidCube()
 		{
 			for (int k = -nz; k < nz; ++k)
 			{
+				float x_jitter = 0.05f * diameter * static_cast<float>(rand() % 3);
+				float y_jitter = 0.05f * diameter * static_cast<float>(rand() % 3);
+				float z_jitter = 0.05f * diameter * static_cast<float>(rand() % 3);
+
 				//int idx = k + j * 10 + i * 100;
-				x = 0.0f   + diameter * static_cast<float>(i);
-				y = 0.6f + diameter * static_cast<float>(j);
-				z = -0.f  + diameter * static_cast<float>(k);
+				x = 0.0f + diameter * static_cast<float>(i) + x_jitter;
+				y = 0.6f + diameter * static_cast<float>(j) + y_jitter;
+				z = -0.f + diameter * static_cast<float>(k) + z_jitter;
 				glm::vec3 pos(x, y, z);
 				particles->m_positions[idx] = pos;
 				particles->m_new_positions[idx] = pos;

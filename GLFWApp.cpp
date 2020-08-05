@@ -33,7 +33,6 @@ GLFWApp* GLFWApp::appInstance;
 GLFWApp::GLFWApp() : 
 	m_previousTime(0), 
 	m_currentTime(0), 
-	m_glsl_version("#version 150"),
 	m_app_status(true),
 	m_resource_manager(nullptr),
 	m_gui_manager(nullptr),
