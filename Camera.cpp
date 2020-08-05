@@ -55,6 +55,7 @@ void Camera::Update()
 	*/
 
 	m_lookAt = glm::lookAt(m_position, m_target_position, glm::vec3(0,1,0));
+	m_projection = glm::perspective(m_fov, m_screen_width / m_screen_height, m_near_plane, m_far_plane);
 
 	m_cameraMat = m_projection * m_lookAt;
 	
@@ -95,6 +96,16 @@ void Camera::Update()
 
 	lookAt = glm::lookAt(position , position + front , camUp);
 	*/
+}
+
+void Camera::Zoom(float fov_change)
+{
+	m_fov += fov_change;
+
+	if (m_fov > 120.f) m_fov = 120.f;
+	if (m_fov < 30.f) m_fov = 30;
+
+
 }
 
 void Camera::Rotate(float phi_change, float theta_change)

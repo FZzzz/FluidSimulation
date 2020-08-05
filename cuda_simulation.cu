@@ -1611,10 +1611,12 @@ void integratePBD(
 
 void sort_particles(CellData cell_data, uint numParticles)
 {
+	uint* grid_hash = cell_data.grid_hash;
+	uint* grid_index = cell_data.grid_index;
 	thrust::sort_by_key(
-		thrust::device_ptr<uint>(cell_data.grid_hash),
-		thrust::device_ptr<uint>(cell_data.grid_hash + numParticles),
-		thrust::device_ptr<uint>(cell_data.grid_index)
+		thrust::device_ptr<uint>(grid_hash),
+		thrust::device_ptr<uint>(grid_hash + numParticles), 
+		thrust::device_ptr<uint>(grid_index)
 	);
 }
 

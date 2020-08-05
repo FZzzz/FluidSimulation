@@ -21,6 +21,7 @@ void Error_callback(int error, const char* description);
 void Key_callback(GLFWwindow* window, int key, int scancode, int action, int mods);
 void Mouse_button_callback(GLFWwindow* window, int button, int action, int mods);
 void Mouse_cursor_callback(GLFWwindow* window, double xpos, double ypos);
+void Mouse_scroll_callback(GLFWwindow* window, double xoffset, double yoffset);
 
 
 void Frame_Status_GUI();
@@ -80,6 +81,7 @@ bool GLFWApp::Initialize(int width , int height , const std::string &title)
 	glfwSetKeyCallback(m_window, Key_callback);
 	glfwSetMouseButtonCallback(m_window, Mouse_button_callback);
 	glfwSetCursorPosCallback(m_window, Mouse_cursor_callback);
+	glfwSetScrollCallback(m_window, Mouse_scroll_callback);
 	glfwSwapInterval(0);
 
 	// Initialize glew
@@ -363,6 +365,13 @@ void Mouse_cursor_callback(GLFWwindow* window, double xpos, double ypos)
 	}
 
 	
+}
+
+void Mouse_scroll_callback(GLFWwindow* window, double xoffset, double yoffset)
+{
+	auto camera = GLFWApp::getInstance()->getMainCamera();
+
+	camera->Zoom(0.1f * yoffset);
 }
 
 void GLFWApp::Render()

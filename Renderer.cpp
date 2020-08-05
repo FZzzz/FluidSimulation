@@ -113,7 +113,7 @@ void Renderer::RenderParticles()
 
 	const glm::mat4 pvm = m_mainCamera->m_cameraMat * glm::mat4(1);
 	shader->SetUniformMat4("pvm", pvm);
-	shader->SetUniformFloat("point_size", 30.f);
+	shader->SetUniformFloat("point_size", 10.f);
 	shader->SetUniformVec3("light_pos", m_mainCamera->m_position);
 	shader->SetUniformVec3("camera_pos", m_mainCamera->m_position);
 	shader->SetUniformMat4("view", m_mainCamera->m_lookAt);

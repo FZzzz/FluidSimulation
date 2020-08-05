@@ -32,6 +32,7 @@ public:
 
 	void Update();
 
+	void Zoom(float fov_change);
 	void Rotate(float phi_change, float theta_change);
 
 	glm::mat4 m_cameraMat;
