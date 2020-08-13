@@ -69,6 +69,7 @@ void ParticleSystem::Release()
 		cudaFree(m_particles->m_d_prev_velocity);
 		cudaFree(m_particles->m_d_velocity);
 		cudaFree(m_particles->m_d_new_velocity);
+		cudaFree(m_particles->m_d_correction);
 
 		cudaFree(m_particles->m_d_force);
 		cudaFree(m_particles->m_d_mass);
@@ -179,6 +180,11 @@ void ParticleSystem::SetupCUDAMemory()
 			n * sizeof(float)
 			);
 
+		cudaMalloc(
+			(void**)&(m_particles->m_d_correction),
+			n * sizeof(float3)
+		);
+
 		// Set value
 		cudaMemcpy(
 		(void*)m_particles->m_d_predict_positions,
@@ -247,6 +253,13 @@ void ParticleSystem::SetupCUDAMemory()
 			n * sizeof(float3),
 			cudaMemcpyHostToDevice
 			);
+
+		cudaMemcpy(
+			(void*)m_particles->m_d_correction,
+			(void*)velocity,
+			n * sizeof(float3),
+			cudaMemcpyHostToDevice
+		);
 	}// end of fluid particle settings
 
 	// Boundary particless

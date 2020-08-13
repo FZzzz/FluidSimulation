@@ -76,6 +76,7 @@ public:
 	float3* m_d_velocity;
 	float3* m_d_new_velocity;
 	float3* m_d_force;
+	float3* m_d_correction;
 
 	/* sorted array on GPU */
 	float* m_d_mass;

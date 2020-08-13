@@ -532,37 +532,45 @@ void integrate_pbd_d(
 	uint index = __mul24(blockIdx.x, blockDim.x) + threadIdx.x;
 	
 	float3 t_vel = vel[index] + dt * params.gravity;
+	t_vel = t_vel * params.global_damping;
 	float3 t_pos = pos[index] + dt * t_vel;
+	
 	
 	if (t_pos.x >= 1.0f)
 	{
 		t_pos.x = 1.f;
-		//t_vel.x =  -params.boundary_damping * abs(t_vel.x);
+		t_vel.x =  -abs(t_vel.x);
+		t_vel *= params.boundary_damping;
 	}
 
 	if (t_pos.x <= -1.0f)
 	{
 	 	t_pos.x = -1.f;
-		//t_vel.x = params.boundary_damping * abs(t_vel.x);
+		t_vel.x = abs(t_vel.x);
+		t_vel *= params.boundary_damping;
 	}
 
 	if (t_pos.z >= 1.0f)
 	{
 		t_pos.z = 1.f;
-		//t_vel.z = -params.boundary_damping * abs(t_vel.z);
+		t_vel.z = -abs(t_vel.z);
+		t_vel *= params.boundary_damping;
 	}
 
 	if (t_pos.z <= -1.0f)
 	{
 		t_pos.z = -1.f;
-		//t_vel.z = params.boundary_damping * abs(t_vel.z);
+		t_vel.z = abs(t_vel.z);
+		t_vel *= params.boundary_damping;
 	}
 	
 	if (t_pos.y <= 0.f)
 	{
 		t_pos.y = 0.f;
-		//t_vel.y = params.boundary_damping * abs(t_vel.y);
+		t_vel.y = abs(t_vel.y);
+		t_vel *= params.boundary_damping;
 	}
+	
 	
 	/* Velocity limitation
 	if (length(t_vel) > 5.f)
@@ -571,8 +579,8 @@ void integrate_pbd_d(
 	}
 	*/
 	
-	predict_pos[index] = t_pos;// +dt * t_vel;
-	vel[index] = t_vel;
+	predict_pos[index] = t_pos;// pos[index] + dt * t_vel;
+	vel[index] = t_vel; 
 	new_pos[index] = predict_pos[index];
 
 
@@ -1441,7 +1449,8 @@ void compute_position_correction(
 	float*	lambda,						// output: computed density
 	float*	rest_density,				// input: rest density
 	float3* sorted_pos,					// input: sorted mass
-	float3* new_pos,					// output: new_pos
+	//float3* new_pos,					// output: new_pos
+	float3* correction,					// output: accumulated correction
 	uint*	gridParticleIndex,			// input: sorted particle indices
 	uint*	cellStart,
 	uint*	cellEnd,
@@ -1467,7 +1476,7 @@ void compute_position_correction(
 	// get address in grid
 	int3 gridPos = calcGridPos(pos);
 
-	float3 correction = make_float3(0, 0, 0);
+	float3 corr = make_float3(0, 0, 0);
 
 
 	// traverse 27 neighbors
@@ -1478,7 +1487,7 @@ void compute_position_correction(
 			for (int x = -1; x <= 1; x++)
 			{
 				int3 neighbor_pos = gridPos + make_int3(x, y, z);
-				correction += pbf_correction(
+				corr += pbf_correction(
 					neighbor_pos, index,
 					pos, lambda_i, rest_density,
 					sorted_pos, lambda,
@@ -1496,7 +1505,7 @@ void compute_position_correction(
 			for (int x = -1; x <= 1; x++)
 			{
 				int3 neighbor_pos = gridPos + make_int3(x, y, z);
-				correction += pbf_correction_boundary(
+				corr += pbf_correction_boundary(
 					neighbor_pos,
 					index,
 					pos,
@@ -1509,15 +1518,17 @@ void compute_position_correction(
 			}
 		}
 	}
-	correction = (1.f / (*rest_density)) * correction;
+	corr = (1.f / (*rest_density)) * corr;
+	correction[originalIndex] = corr;
 	//compute new position
-	new_pos[originalIndex] = pos + correction;
+	//new_pos[originalIndex] = pos + corr;
 }
 
 __global__
 void apply_correction(
 	float3* new_pos,
 	float3* predict_pos,
+	float3* correction,
 	CellData cell_data,
 	uint numParticles
 )
@@ -1530,10 +1541,11 @@ void apply_correction(
 	
 	uint original_index = cell_data.grid_index[index];
 
+	new_pos[original_index] = cell_data.sorted_pos[index] + correction[original_index];
 	predict_pos[original_index] = new_pos[original_index];
 	// write back to sorted_pos for next iteration
 	cell_data.sorted_pos[index] = new_pos[original_index];
-	
+	correction[original_index] = make_float3(0, 0, 0);
 }
 
 
@@ -1742,7 +1754,8 @@ void solve_sph_fluid(
 			sph_particles->m_d_lambda,
 			rest_density,
 			sph_cell_data.sorted_pos,
-			sph_particles->m_d_new_positions,
+			//sph_particles->m_d_new_positions,
+			sph_particles->m_d_correction,
 			sph_cell_data.grid_index,
 			sph_cell_data.cellStart,
 			sph_cell_data.cellEnd,
@@ -1756,6 +1769,7 @@ void solve_sph_fluid(
 		apply_correction << <numBlocks, numThreads >> > (
 			sph_particles->m_d_new_positions, 
 			sph_particles->m_d_predict_positions, 
+			sph_particles->m_d_correction,
 			sph_cell_data,
 			numParticles
 		);
@@ -1786,7 +1800,7 @@ void solve_sph_fluid(
 }
 
 __device__
-float3 pbd_dem_correction(
+float3 pbd_distance_correction(
 	int3    grid_pos,
 	uint    index,
 	float3  pos,
@@ -1830,31 +1844,91 @@ float3 pbd_dem_correction(
 					C = dist - 2.f * params.particle_radius;
 					
 					// normalize v + 0.000001f for vanish problem
-					float3 n = v / (dist + 0.000001f);
+					float3 n = v / (dist);// +0.000001f);
 
 					correction_j = -w0 * (1.f / w_sum) * C * n;
 
-
+					/*
 					// Tangential correction
 					// project on tangential direction
+					float penetration = abs(C);
 					float3 correction_j_t = correction_j - (dot(correction_j, n) * n);
-					float threshold = params.static_friction * dist;
+					float threshold = params.static_friction * penetration;
 					float len = length(correction_j_t);
-
+					
+					//printf("penetration: %f\n", penetration);
+					//printf("Correction: %f, %f, %f\n", correction_j_t.x, correction_j_t.y, correction_j_t.z);
 					// use kinematic friction model
 					if (length(correction_j_t) < threshold)
 					{
-						float coeff = min(params.kinematic_friction * dist / len, 1.f);
+						float coeff = min(params.kinematic_friction * penetration / len, 1.f);
 						correction_j_t = coeff * correction_j_t;
 					}
-
+					
 					correction_j_t = (w0 / w_sum) * correction_j_t;
 					correction_j += correction_j_t;
-				}
-
-
-				correction += correction_j;
+					*/
+					
+				 }
 			}
+			correction += correction_j;
+		}
+
+		//printf("Num neighbors: %u\n", end_index - start_index);
+	}
+	return correction;
+}
+
+__device__
+float3 pbd_distance_correction_boundary(
+	int3    grid_pos,
+	uint    index,
+	float3  pos,
+	float	w0,
+	float*	b_invMass,    // invMass of boundary particles
+	CellData b_cell_data	// cell_data of boundary particles
+)
+{
+	uint grid_hash = calcGridHash(grid_pos);
+
+	// get start of bucket for this cell
+	uint start_index = b_cell_data.cellStart[grid_hash];
+	float3 correction = make_float3(0, 0, 0);
+
+	if (start_index != 0xffffffff)          // cell is not empty
+	{
+		// iterate over particles in this cell
+		uint end_index = b_cell_data.cellEnd[grid_hash];
+
+		// reuse C in searching
+		float C = 0;
+
+		for (uint j = start_index; j < end_index; j++)
+		{
+			float3 correction_j = make_float3(0, 0, 0);
+			
+			uint original_index_j = b_cell_data.grid_index[j];
+
+			float3 pos2 = b_cell_data.sorted_pos[j];
+			float3 v = pos - pos2;
+			float dist = length(v);
+
+			// correct if distance is close
+			if (dist <= 2.f * params.particle_radius)
+			{
+				// Non-penetration correction
+				const float w1 = b_invMass[original_index_j];
+
+				float w_sum = w0 + w1;
+				C = dist - 2.f * params.particle_radius;
+
+				// normalize v + 0.000001f for vanish problem
+				float3 n = v / (dist);// +0.000001f);
+
+				correction_j = -w0 * (1.f / w_sum) * C * n;
+			}
+
+			correction += correction_j;
 		}
 
 		//printf("Num neighbors: %u\n", end_index - start_index);
@@ -1863,10 +1937,12 @@ float3 pbd_dem_correction(
 }
 
 __global__
-void compute_dem_correction(
-	float3*		new_pos,		// output: corrected pos
+void compute_distance_correction(
+	float3*		correction,		// output: corrected pos
 	float*		invMass,		// input: mass
+	float*		b_invMass,
 	CellData	cell_data,		// input: cell data of dem particles
+	CellData	b_cell_data,
 	uint		numParticles	// input: number of DEM particles
 )
 {
@@ -1882,7 +1958,7 @@ void compute_dem_correction(
 	// get address in grid
 	int3 gridPos = calcGridPos(pos);
 
-	float3 correction = make_float3(0, 0, 0);
+	float3 corr = make_float3(0, 0, 0);
 
 	for (int z = -1; z <= 1; z++)
 	{
@@ -1891,7 +1967,7 @@ void compute_dem_correction(
 			for (int x = -1; x <= 1; x++)
 			{
 				int3 neighbor_pos = gridPos + make_int3(x, y, z);
-				correction += pbd_dem_correction(
+				corr += pbd_distance_correction(
 					neighbor_pos, index,
 					pos, w0,
 					invMass,
@@ -1901,13 +1977,263 @@ void compute_dem_correction(
 		}
 	}
 
-	new_pos[original_index] = pos + correction;
+	for (int z = -1; z <= 1; z++)
+	{
+		for (int y = -1; y <= 1; y++)
+		{
+			for (int x = -1; x <= 1; x++)
+			{
+				int3 neighbor_pos = gridPos + make_int3(x, y, z);
+				corr += pbd_distance_correction_boundary(
+					neighbor_pos, index,
+					pos, w0,
+					b_invMass,
+					b_cell_data
+				);
+			}
+		}
+	}
+
+	correction[original_index] = corr;
+}
+
+__device__
+float3 pbd_friction_correction(
+	int3    grid_pos,
+	uint    index,
+	float3  predict_pos0,
+	float3	original_pos0,
+	float	w0,
+	float3* predict_pos,	
+	float3* original_pos,
+	float*	invMass,	
+	CellData cell_data
+)
+{
+	uint grid_hash = calcGridHash(grid_pos);
+
+	// get start of bucket for this cell
+	uint start_index = cell_data.cellStart[grid_hash];
+	float3 result = make_float3(0,0,0);// correction_i;
+
+	if (start_index != 0xffffffff)          // cell is not empty
+	{
+		// iterate over particles in this cell
+		uint end_index = cell_data.cellEnd[grid_hash];
+
+		for (uint j = start_index; j < end_index; j++)
+		{
+			float3 correction_j = make_float3(0, 0, 0);
+			if (j != index)                // check not colliding with self
+			{
+				uint original_index_j = cell_data.grid_index[j];
+
+				float3 original_pos1 = original_pos[original_index_j];
+				//float3 predict_pos1 = predict_pos[original_index_j];
+
+				float3 predict_pos1 = cell_data.sorted_pos[j];
+				float3 v = predict_pos0 - predict_pos1;
+				float dist = length(v);
+
+				// correct if distance is close
+				if (dist <= 2.f * params.particle_radius)
+				{
+					// Non-penetration correction
+					const float w1 = invMass[original_index_j];
+
+					float w_sum = w0 + w1;
+
+					// normalize v + 0.000001f for vanish problem
+					float3 n = v / (dist);// +0.000001f);
+
+					float penetration = 2.f * params.particle_radius - dist;
+					float3 dx = (predict_pos0 - original_pos0) + (predict_pos1 - original_pos1);
+					float3 dx_t = dx - (dot(dx, n) * n);
+
+					//printf("dx: %f, %f, %f\n", dx_t.x, dx_t.y, dx_t.z);
+					//printf("penetration: %f\n", penetration);
+
+
+					float threshold = params.static_friction * penetration;
+					float len = length(dx_t);
+
+					// use kinematic friction model
+					if (length(dx_t) > threshold)
+					{
+						float coeff = min(params.kinematic_friction * penetration / len, 1.f);
+						dx_t = coeff * dx_t;
+					}/*
+					else
+					{
+						printf("static\n");
+					}
+					*/
+
+					dx_t = -(w0 / w_sum) * dx_t;
+					correction_j += dx_t;
+					//printf("dx: %f, %f, %f\n", dx_t.x, dx_t.y, dx_t.z);
+				}
+			}
+			result += correction_j;
+		}
+
+		//printf("Num neighbors: %u\n", end_index - start_index);
+	}
+	return result;
+}
+
+__device__
+float3 pbd_friction_correction_boundary(
+	int3    grid_pos,
+	uint    index,
+	float3  predict_pos0,
+	float3	original_pos0,
+	float	w0,
+	float*  b_invMass,
+	CellData b_cell_data
+	)
+{
+	uint grid_hash = calcGridHash(grid_pos);
+
+	// get start of bucket for this cell
+	uint start_index = b_cell_data.cellStart[grid_hash];
+	float3 result = make_float3(0, 0, 0);// correction_i;
+
+	if (start_index != 0xffffffff)          // cell is not empty
+	{
+		// iterate over particles in this cell
+		uint end_index = b_cell_data.cellEnd[grid_hash];
+
+		for (uint j = start_index; j < end_index; j++)
+		{
+			float3 correction_j = make_float3(0, 0, 0);
+			
+			uint original_index_j = b_cell_data.grid_index[j];
+
+			float3 pos1 = b_cell_data.sorted_pos[j];
+			float3 v = predict_pos0 - pos1;
+			float dist = length(v);
+
+			// correct if distance is close
+			if (dist <= 2.f * params.particle_radius)
+			{
+				// Non-penetration correction
+				const float w1 = b_invMass[original_index_j];
+
+				float w_sum = w0 + w1;
+
+				// normalize v + 0.000001f for vanish problem
+				float3 n = v / (dist);// +0.000001f);
+
+				float penetration = 2.f * params.particle_radius - dist;
+				float3 dx = (predict_pos0 - original_pos0);
+				float3 dx_t = dx - (dot(dx, n) * n);
+
+				//printf("dx: %f, %f, %f\n", dx.x, dx.y, dx.z);
+
+
+				float threshold = params.static_friction * penetration;
+				float len = length(dx_t);
+
+				// if exceed threshold use kinematic friction model
+				if (length(dx_t) > threshold)
+				{
+					float coeff = min(params.kinematic_friction * penetration / len, 1.f);
+					dx_t = coeff * dx_t;
+				}
+
+				dx_t = -(w0 / w_sum) * dx_t;
+				correction_j += dx_t;
+			}
+			result += correction_j;
+		}
+
+		//printf("Num neighbors: %u\n", end_index - start_index);
+	}
+	return result;
+}
+
+__global__
+void compute_friction_correction(
+	float3* correction,
+	float3* new_pos,	// output: corrected pos
+	float3* original_pos, // input: position at the start of this time step
+	float* invMass,		// input: mass
+	float* b_invMass,
+	CellData	cell_data,		// input: cell data of dem particles
+	CellData	b_cell_data,
+	uint		numParticles	// input: number of DEM particles
+)
+{
+	uint index = __mul24(blockIdx.x, blockDim.x) + threadIdx.x;
+
+	if (index >= numParticles) return;
+
+	uint original_index = cell_data.grid_index[index];
+
+	// read particle data from sorted arrays
+	float3 pos = cell_data.sorted_pos[index];
+	float3 new_pos0 = new_pos[original_index];
+	float3 original_pos0 = original_pos[original_index];
+
+	float w0 = invMass[original_index];
+	
+	//float3 correction_i = correction[original_index];
+	// get address in grid
+	int3 gridPos = calcGridPos(pos);
+
+	float3 corr = make_float3(0, 0, 0);
+
+	for (int z = -1; z <= 1; z++)
+	{
+		for (int y = -1; y <= 1; y++)
+		{
+			for (int x = -1; x <= 1; x++)
+			{
+				int3 neighbor_pos = gridPos + make_int3(x, y, z);
+				corr += pbd_friction_correction(
+					neighbor_pos, index,
+					pos, original_pos0,w0, 
+					new_pos, original_pos, invMass,
+					cell_data
+				);
+			}
+		}
+	}
+	
+	for (int z = -1; z <= 1; z++)
+	{
+		for (int y = -1; y <= 1; y++)
+		{
+			for (int x = -1; x <= 1; x++)
+			{
+				int3 neighbor_pos = gridPos + make_int3(x, y, z);
+				corr += pbd_friction_correction_boundary(
+					neighbor_pos, index,
+					pos, original_pos0, w0,
+					b_invMass,
+					b_cell_data
+				);
+			}
+		}
+	}
+	
+	 
+	//printf("corr: %f %f %f\n", corr.x, corr.y, corr.z);
+	
+
+	//corr = 0.5f * (correction_i + corr);
+	correction[original_index] = corr;
+	//new_pos[original_index] = pos + corr;
 }
 
 void solve_pbd_dem(
-	ParticleSet* dem_particles, 
-	CellData cell_data, 
+	ParticleSet* dem_particles,
+	ParticleSet* boundary_particles,
+	CellData cell_data,
+	CellData b_cell_data,
 	uint numParticles, 
+	uint b_numParticles,
 	float dt,
 	int iteration
 )
@@ -1916,21 +2242,48 @@ void solve_pbd_dem(
 	compute_grid_size(numParticles, MAX_THREAD_NUM, numBlocks, numThreads);
 	for (int i = 0; i < iteration; ++i)
 	{
-		compute_dem_correction << <numBlocks, numThreads >> > (
-			dem_particles->m_d_new_positions,
+		compute_distance_correction << <numBlocks, numThreads >> > (
+			dem_particles->m_d_correction,
 			dem_particles->m_d_massInv,
+			boundary_particles->m_d_massInv,
 			cell_data,
+			b_cell_data,
 			numParticles
 			);
 		getLastCudaError("Kernel execution failed: compute_dem_correction ");
 		apply_correction << <numBlocks, numThreads >> > (
 			dem_particles->m_d_new_positions,
 			dem_particles->m_d_predict_positions,
+			dem_particles->m_d_correction,
 			cell_data,
 			numParticles
 			);
+		getLastCudaError("Kernel execution failed: apply_correction ");
+		
+		
 	}
+
+	compute_friction_correction << <numBlocks, numThreads >> > (
+		dem_particles->m_d_correction,
+		dem_particles->m_d_new_positions,
+		dem_particles->m_d_positions,
+		dem_particles->m_d_massInv,
+		boundary_particles->m_d_massInv,
+		cell_data,
+		b_cell_data,
+		numParticles
+		);
+
+	getLastCudaError("Kernel execution failed: compute_friction_correction ");
+	apply_correction << <numBlocks, numThreads >> > (
+		dem_particles->m_d_new_positions,
+		dem_particles->m_d_predict_positions,
+		dem_particles->m_d_correction,
+		cell_data,
+		numParticles
+		);
 	getLastCudaError("Kernel execution failed: apply_correction ");
+		
 	// finalize correction
 	finalize_correction << <numBlocks, numThreads >> > (
 		dem_particles->m_d_positions,

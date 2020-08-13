@@ -87,8 +87,11 @@ void solve_sph_fluid(
 
 void solve_pbd_dem(
     ParticleSet* dem_particles,
+    ParticleSet* boundary_particles,
     CellData     cell_data,
+    CellData     b_cell_data,
     uint         numParticles,
+    uint         b_numParticles,
     float        dt,
     int          iteration
 );

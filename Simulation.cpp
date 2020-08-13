@@ -148,7 +148,7 @@ bool Simulation::StepCUDA(float dt)
 	if (m_pause)
 		return true;
 	
-	int iterations = 10;
+	int iterations = 1;
 
 	std::chrono::steady_clock::time_point t1, t2, t3, t4, t5;
 
@@ -202,16 +202,19 @@ bool Simulation::StepCUDA(float dt)
 		m_neighbor_searcher->m_num_grid_cells
 	);
 	t3 = std::chrono::high_resolution_clock::now();
-	
+	/*
 	solve_pbd_dem(
 		particles,
+		boundary_particles,
 		m_neighbor_searcher->m_d_sph_cell_data,
+		m_neighbor_searcher->m_d_boundary_cell_data,
 		numParticles,
+		b_numParticles,
 		dt,
 		iterations
 	);
+	*/
 	
-	/*
 	solve_sph_fluid(
 		m_d_rest_density,
 		particles,
@@ -223,7 +226,7 @@ bool Simulation::StepCUDA(float dt)
 		dt,
 		iterations
 	);
-	*/
+	
 	
 	t4 = std::chrono::high_resolution_clock::now();
 
@@ -242,8 +245,10 @@ bool Simulation::StepCUDA(float dt)
 
 	static int count = 0;
 	if(!m_pause) count++;
-	if (count == 5000)
+	/*
+	if (count == 1)
 		m_pause = true, count = 0;
+	*/
 
 
 	return true;
@@ -312,7 +317,7 @@ void Simulation::setGravity(float gravity)
 void Simulation::SetupSimParams()
 {
 	//const size_t n_particles = 1000;
-	const float particle_mass = 0.025f;
+	const float particle_mass = 0.005f;
 	const float n_kernel_particles = 20.f;	
 	// water density = 1000 kg/m^3
 	m_rest_density = 1000.f; 
@@ -331,7 +336,7 @@ void Simulation::SetupSimParams()
 
 	m_sim_params = new SimParams();
 	m_sim_params->gravity = make_float3(0.f, -9.8f, 0.f);
-	m_sim_params->global_damping = 0.99f;
+	m_sim_params->global_damping = 1.f;
 	m_sim_params->particle_radius = particle_radius;
 	m_sim_params->effective_radius = effective_radius;
 	m_sim_params->epsilon = 100.f;
@@ -343,11 +348,11 @@ void Simulation::SetupSimParams()
 	m_sim_params->damping = 0.02f;
 	m_sim_params->shear = 0.1f;
 	m_sim_params->attraction = 0.0f;
-	m_sim_params->boundary_damping = 1.0f;
+	m_sim_params->boundary_damping = 0.1f;
 	
 	// ice friction at -12 C
-	m_sim_params->static_friction = 0.3f;
-	m_sim_params->kinematic_friction = 0.035f;
+	m_sim_params->static_friction = 1.0f;
+	m_sim_params->kinematic_friction = 0.5f;
 
 	m_particle_system->setParticleRadius(particle_radius);
 	setParams(m_sim_params);
@@ -533,7 +538,7 @@ void Simulation::GenerateFluidCube()
 	// number of particles on x,y,z
 	int nx, ny, nz;
 	// fluid cube extends
-	glm::vec3 half_extend(0.5f, 0.4f, 0.5f);
+	glm::vec3 half_extend(0.5f, 0.5f, 0.5f);
 	
 	nx = static_cast<int>(half_extend.x / diameter);
 	ny = static_cast<int>(half_extend.y / diameter);
@@ -555,14 +560,14 @@ void Simulation::GenerateFluidCube()
 		{
 			for (int k = -nz; k < nz; ++k)
 			{
-				float x_jitter = 0.05f * diameter * static_cast<float>(rand() % 3);
-				float y_jitter = 0.05f * diameter * static_cast<float>(rand() % 3);
-				float z_jitter = 0.05f * diameter * static_cast<float>(rand() % 3);
+				float x_jitter = 0.001f * diameter * static_cast<float>(rand() % 3);
+				float y_jitter = 0.001f * diameter * static_cast<float>(rand() % 3);
+				float z_jitter = 0.001f * diameter * static_cast<float>(rand() % 3);
 
 				//int idx = k + j * 10 + i * 100;
-				x = 0.0f + diameter * static_cast<float>(i) + x_jitter;
-				y = 0.6f + diameter * static_cast<float>(j) + y_jitter;
-				z = -0.f + diameter * static_cast<float>(k) + z_jitter;
+				x = 0.0f + diameter * static_cast<float>(i) +x_jitter;
+				y = 0.6f + diameter * static_cast<float>(j) +y_jitter;
+				z = -0.f + diameter * static_cast<float>(k) +z_jitter;
 				glm::vec3 pos(x, y, z);
 				particles->m_positions[idx] = pos;
 				particles->m_new_positions[idx] = pos;
