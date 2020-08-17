@@ -2,13 +2,7 @@
 *Postion-based Fluid Simulation*
 
 ## Introduction
-This project is an example of the basic Position-ased Fluid(PBF) simulation. Comparing with traditional SPH fluid simulation, PBF has better stability over different timesteps and faster computation speed. 
-
-
-The solver I used here is a Jaccobian-fasion solver, which allows us to compute position changes concurrently. The implementation uses OpenMP for neighborhood searching and SPH computation with 8 dynamical scheduled threads. The neighbor searching algorithm is based on spatial hashing table. By cutting the whole space into grids and using hashing function to get the coordinate of neighbors, it cutted off useless comparisons and futhrer increase the performance of whole searching process. 
-
-
-In near future, the simulation will be computed by GPU by exloiting the architechture of shared memory and higher degree of parallelization. 
+This project implemented Position-ased Fluid(PBF) simulation with referencing to Unified Particle Physics for Real-time Applications published by Macklin and his fellow. Comparing with traditional particle-based fluid simulation, PBF has better stability over different timesteps and faster computation speed. 
 
 ## Result 
 
@@ -22,20 +16,11 @@ In near future, the simulation will be computed by GPU by exloiting the architec
 
 **CUDA**
 
-![](https://imgur.com/JtqN0VY.gif) 
-
-10k fluid particles,
-
-90 fps in average
+![](https://i.imgur.com/OvCaG1t.png)
 
 
-## Analyzation by Intel VTune Profiler
-![](https://i.imgur.com/WNTyFkv.png)
-
-Effective CPU Utilization: 62.5% (5.002 out of 8 logical CPUs)
-
-CPU Spin Time: 29.864(s) / 139.155(s)
-
+* 64000 fluid particles
+* 70 fps in average 
 
 
 ## License
