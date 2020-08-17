@@ -461,67 +461,6 @@ __global__ void test_offset(float3* positions)
 	positions[i].z = positions[i].z + 0.001f;
 }
 
-__global__
-void integrate_d(
-	float3* pos, float3* vel, 
-	float deltaTime, 
-	uint numParticles)
-{
-	uint index = __mul24(blockIdx.x, blockDim.x) + threadIdx.x;
-
-	float3 t_pos = pos[index];
-	float3 t_vel = vel[index];
-	
-	if (index >= numParticles)
-		return;
-	/*
-	if (index == 0)
-		printf("particles[0]: %5f, %5f, %5f %5f\n", pos[index].x, pos[index].y, pos[index].z, params.gravity.y);
-	*/
-	t_vel = t_vel + params.gravity * deltaTime;
-	//t_vel = params.damping * t_vel;
-	t_pos = t_pos + t_vel * deltaTime;
-	
-	if (t_pos.x > 10.0f - params.particle_radius)
-	{
-		t_pos.x = 10.0f - params.particle_radius;
-		t_vel.x *= params.boundary_damping;
-	}
-
-	if (t_pos.x < -10.0f + params.particle_radius)
-	{
-		t_pos.x = -10.0f + params.particle_radius;
-		t_vel.x *= params.boundary_damping;
-	}
-
-	
-	if (t_pos.z > 1.0f - params.particle_radius)
-	{
-		t_pos.z = 1.0f - params.particle_radius;
-		t_vel.z *= params.boundary_damping;
-	}
-
-	if (t_pos.z < -15.0f + params.particle_radius)
-	{
-		t_pos.z = -15.0f + params.particle_radius;
-		t_vel.z *= params.boundary_damping;
-	}
-
-	if (t_pos.y < 0.f + params.particle_radius)
-	{
-		t_pos.y = 0.f + params.particle_radius;
-		t_vel.y *= params.boundary_damping;
-	}
-	
-	pos[index] = t_pos;
-	vel[index] = t_vel;
-	
-	/*
-	if (index == 0)
-		printf("After particles[0]: %f, %f, %f\n", pos[index].x, pos[index].y, pos[index].z);
-		*/
-}
-
 __global__ 
 void integrate_pbd_d(
 	float3* pos, float3* vel, float3* force, float* massInv,
@@ -1588,18 +1527,6 @@ void setParams(SimParams* param_in)
 	checkCudaErrors(cudaMemcpyToSymbol(params, param_in, sizeof(SimParams)));
 }
 
-void integrate(float3* pos, float3* vel, float deltaTime, uint numParticles)
-{
-	uint numThreads, numBlocks;
-	compute_grid_size(numParticles, MAX_THREAD_NUM, numBlocks, numThreads);
-
-	integrate_d << <numBlocks, numThreads >> > (
-		pos, vel,
-		deltaTime,
-		numParticles
-		);
-}
-
 /* Integration for Position based Dynamics */
 void integratePBD(
 	float3* pos, float3* vel,  
@@ -1787,6 +1714,7 @@ void solve_sph_fluid(
 		dt
 	);
 	getLastCudaError("Kernel execution failed: finalize_correction ");
+	/*
 	t5 = std::chrono::high_resolution_clock::now();
 	{
 		ImGui::Begin("CUDA Performance");
@@ -1796,7 +1724,7 @@ void solve_sph_fluid(
 		ImGui::Text("Finalize:    %.5lf (ms)", (t5 - t4).count() / 1000000.0f);
 		ImGui::End();
 	}
-
+	*/
 }
 
 __device__

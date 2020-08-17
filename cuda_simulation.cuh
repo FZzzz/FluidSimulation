@@ -18,13 +18,6 @@ void cuda_test_offset(unsigned int block_num, unsigned int thread_num, float3* p
 
 void setParams(SimParams* param_in);
 
-void integrate(
-    float3* pos,
-    float3* vel,
-    float deltaTime,
-    uint numParticles
-);
-
 void integratePBD(
     float3* pos, float3* vel,
     float3* force, float* massInv,

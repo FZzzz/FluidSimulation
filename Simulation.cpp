@@ -132,9 +132,6 @@ bool Simulation::Step(float dt)
 		ImGui::End();
 	}
 
-	size_t glm_size = sizeof(glm::vec3);
-	size_t cu_size = sizeof(float3);
-
 	//m_pause = true;
 
 	return true;
@@ -148,7 +145,7 @@ bool Simulation::StepCUDA(float dt)
 	if (m_pause)
 		return true;
 	
-	int iterations = 1;
+	int iterations = 3;
 
 	std::chrono::steady_clock::time_point t1, t2, t3, t4, t5;
 
@@ -234,7 +231,7 @@ bool Simulation::StepCUDA(float dt)
 		ImGui::Begin("CUDA Performance");
 		ImGui::Text("Integrate:   %.5lf (ms)", (t2 - t1).count() / 1000000.0f);
 		ImGui::Text("Search:      %.5lf (ms)", (t3 - t2).count() / 1000000.0f);
-		//ImGui::Text("Solve:       %.5lf (ms)", (t4 - t2).count() / 1000000.0f);
+		ImGui::Text("Solve:       %.5lf (ms)", (t4 - t3).count() / 1000000.0f);
 		ImGui::End();
 	}
 	
@@ -246,11 +243,9 @@ bool Simulation::StepCUDA(float dt)
 	static int count = 0;
 	if(!m_pause) count++;
 	/*
-	if (count == 1)
+	if (count == 1000)
 		m_pause = true, count = 0;
 	*/
-
-
 	return true;
 }
 
@@ -317,7 +312,7 @@ void Simulation::setGravity(float gravity)
 void Simulation::SetupSimParams()
 {
 	//const size_t n_particles = 1000;
-	const float particle_mass = 0.005f;
+	const float particle_mass = 0.015f;
 	const float n_kernel_particles = 20.f;	
 	// water density = 1000 kg/m^3
 	m_rest_density = 1000.f; 
@@ -352,7 +347,7 @@ void Simulation::SetupSimParams()
 	
 	// ice friction at -12 C
 	m_sim_params->static_friction = 1.0f;
-	m_sim_params->kinematic_friction = 0.5f;
+	m_sim_params->kinematic_friction = 0.75f;
 
 	m_particle_system->setParticleRadius(particle_radius);
 	setParams(m_sim_params);
@@ -360,7 +355,7 @@ void Simulation::SetupSimParams()
 
 void Simulation::InitializeBoundaryParticles()
 {
-	const int thickness = 3;
+	const int thickness = 1;
 	const float diameter = 2.f * m_sim_params->particle_radius;
 	// number of particles on x,y,z
 	int nx, ny, nz;
@@ -565,9 +560,9 @@ void Simulation::GenerateFluidCube()
 				float z_jitter = 0.001f * diameter * static_cast<float>(rand() % 3);
 
 				//int idx = k + j * 10 + i * 100;
-				x = 0.0f + diameter * static_cast<float>(i) +x_jitter;
-				y = 0.6f + diameter * static_cast<float>(j) +y_jitter;
-				z = -0.f + diameter * static_cast<float>(k) +z_jitter;
+				x = 0.0f + diameter * static_cast<float>(i);// +x_jitter;
+				y = 0.75f + diameter * static_cast<float>(j);// +y_jitter;
+				z = 0.0f + diameter * static_cast<float>(k);// +z_jitter;
 				glm::vec3 pos(x, y, z);
 				particles->m_positions[idx] = pos;
 				particles->m_new_positions[idx] = pos;
